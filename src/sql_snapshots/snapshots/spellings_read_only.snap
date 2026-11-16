@@ -17,6 +17,8 @@ source: src/sql_snapshots.rs
 [snowflake] read_only=false => (none)
 [clickhouse] read_only=true => (none)
 [clickhouse] read_only=false => (none)
+[spanner] read_only=true => (none)
+[spanner] read_only=false => (none)
 [mssql] read_only=true => (none)
 [mssql] read_only=false => (none)
 [mongodb] read_only=true => (none)

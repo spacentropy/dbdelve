@@ -81,6 +81,16 @@ source: src/sql_snapshots.rs
 [clickhouse] duplicates #0 id => |1|
 [clickhouse] duplicates #1 id => |2|
 [clickhouse] empty name #0  => |1|
+[spanner] columns #0 id => |`id`|
+[spanner] columns #1 Name => |`Name`|
+[spanner] columns #2 we"ird => |`we"ird`|
+[spanner] columns #3 back`tick => |`back\\x60tick`|
+[spanner] columns #4 ümlaut => |`ümlaut`|
+[spanner] columns #5 select => |`select`|
+[spanner] columns #6 out of range => (none)
+[spanner] duplicates #0 id => |1|
+[spanner] duplicates #1 id => |2|
+[spanner] empty name #0  => |1|
 [mssql] columns #0 id => |"id"|
 [mssql] columns #1 Name => |"Name"|
 [mssql] columns #2 we"ird => |"we""ird"|

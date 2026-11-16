@@ -17,8 +17,8 @@ use crate::{
     Workspace,
     db::{
         ConnectionConfig, Driver, Engine, ExternalConfig, Fields, MongoConfig, PasswordCommand,
-        Plugin, PostgresConfig, ServerConfig, SnowflakeConfig, SshTunnel, SslMode, SsmTunnel,
-        Target, odbc_string,
+        Plugin, PostgresConfig, ServerConfig, SnowflakeConfig, SpannerConfig, SshTunnel, SslMode,
+        SsmTunnel, Target, odbc_string,
     },
     explorer::Shortcuts,
     session::Profile,
@@ -91,6 +91,10 @@ pub(crate) struct ConnectionForm {
     pub(crate) private_key: Entity<InputState>,
     pub(crate) warehouse: Entity<InputState>,
     pub(crate) role: Entity<InputState>,
+    /// What an instance has besides `database`, `private_key` (its key file)
+    /// and `host` (its emulator), which it shares.
+    pub(crate) cloud_project: Entity<InputState>,
+    pub(crate) instance: Entity<InputState>,
     /// Driver options passed through as typed, where `Engine::takes_options`.
     pub(crate) options: Entity<InputState>,
     /// A section of a connection service file, where `Target::takes_service`.
@@ -158,6 +162,7 @@ impl ConnectionForm {
             Fields::Server => self.url.clone(),
             Fields::File => self.path.clone(),
             Fields::Account => self.account.clone(),
+            Fields::Instance => self.cloud_project.clone(),
             Fields::ConnectionString => self.connection.clone(),
         }
     }
@@ -177,6 +182,7 @@ impl ConnectionForm {
                 Fields::Server => self.host.clone(),
                 Fields::File => self.path.clone(),
                 Fields::Account => self.account.clone(),
+                Fields::Instance => self.cloud_project.clone(),
                 Fields::ConnectionString => self.connection.clone(),
             });
         }
@@ -214,6 +220,10 @@ impl ConnectionForm {
             ) => Some(path.as_str()),
             _ => None,
         };
+        let spanner = match config {
+            Some(ConnectionConfig::Spanner(spanner)) => Some(spanner),
+            _ => None,
+        };
         let mongo = match config {
             Some(ConnectionConfig::MongoDb(mongo)) => Some(mongo),
             _ => None,
@@ -229,6 +239,7 @@ impl ConnectionForm {
                 server
                     .map(|server| server.database.as_str())
                     .or_else(|| account.map(|account| account.database.as_str()))
+                    .or_else(|| spanner.map(|spanner| spanner.database.as_str()))
                     .or_else(|| file.map(file_stem)),
             ))
         });
@@ -246,7 +257,8 @@ impl ConnectionForm {
             InputState::new(window, cx).default_value(value(
                 server
                     .map(|server| server.host.as_str())
-                    .or_else(|| account.and_then(|account| account.host.as_deref())),
+                    .or_else(|| account.and_then(|account| account.host.as_deref()))
+                    .or_else(|| spanner.map(|spanner| spanner.emulator.as_str())),
             ))
         });
         let port = cx.new(|cx| {
@@ -261,7 +273,8 @@ impl ConnectionForm {
             InputState::new(window, cx).default_value(value(
                 server
                     .map(|server| server.database.as_str())
-                    .or_else(|| account.map(|account| account.database.as_str())),
+                    .or_else(|| account.map(|account| account.database.as_str()))
+                    .or_else(|| spanner.map(|spanner| spanner.database.as_str())),
             ))
         });
         let user = cx.new(|cx| {
@@ -353,7 +366,21 @@ impl ConnectionForm {
         let private_key = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("/absolute/path/to/key.p8")
-                .default_value(value(account.map(|account| account.private_key.as_str())))
+                .default_value(value(
+                    account
+                        .map(|account| account.private_key.as_str())
+                        .or_else(|| spanner.map(|spanner| spanner.private_key.as_str())),
+                ))
+        });
+        let cloud_project = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Required")
+                .default_value(value(spanner.map(|spanner| spanner.project.as_str())))
+        });
+        let instance = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Required")
+                .default_value(value(spanner.map(|spanner| spanner.instance.as_str())))
         });
         let warehouse = cx.new(|cx| {
             InputState::new(window, cx)
@@ -421,6 +448,8 @@ impl ConnectionForm {
             &ssm_aws_cli,
             &ssm_plugin,
             &account_name,
+            &cloud_project,
+            &instance,
             // And the Password field, disabled while a command is typed.
             &password_command,
         ] {
@@ -481,6 +510,8 @@ impl ConnectionForm {
             private_key,
             warehouse,
             role,
+            cloud_project,
+            instance,
             options,
             service,
             srv: mongo.is_some_and(|mongo| mongo.srv),
@@ -608,6 +639,7 @@ impl ConnectionForm {
             // A blank username sends none, and the server signs in `default`.
             Engine::ClickHouse => ConnectionConfig::ClickHouse(self.server_requiring(&[], cx)?),
             Engine::Snowflake => ConnectionConfig::Snowflake(self.account(cx)?),
+            Engine::Spanner => ConnectionConfig::Spanner(self.spanner(cx)?),
             Engine::MongoDb => {
                 let mut server = self.server_requiring(&[], cx)?;
                 // Hidden while SRV is on, so whatever it held is not asked for.
@@ -735,7 +767,13 @@ impl ConnectionForm {
             placeholders(self.target())
         };
         let passphrase = password_placeholder(false, self.editing.is_some());
+        // Blank is a credential of its own on an instance; an account has none.
+        let private_key = match self.target().fields() {
+            Fields::Instance => "Blank: application default credentials",
+            _ => "/absolute/path/to/key.p8",
+        };
         for (input, placeholder) in [
+            (&self.private_key, SharedString::from(private_key)),
             (&self.root_certificate, SharedString::from(root_certificate)),
             (&self.password, password.into()),
             (&self.ssh_passphrase, passphrase.into()),
@@ -788,7 +826,12 @@ impl ConnectionForm {
                 database: &read(&self.database),
                 user: &read(&self.user),
                 path: &read(&self.path),
-                account: &read(&self.account),
+                account: &match self.target().fields() {
+                    Fields::Instance => {
+                        format!("{}/{}", read(&self.cloud_project), read(&self.instance))
+                    }
+                    _ => read(&self.account),
+                },
                 service: service.as_deref(),
                 tunnel: self.ssh.then_some(tunnel.as_str()),
             },
@@ -845,6 +888,41 @@ impl ConnectionForm {
             role: optional(&self.role),
             statement_timeout: self.statement_timeout(cx)?,
             schema: None,
+        })
+    }
+
+    /// Which credential signs in is said by which field is filled: the
+    /// emulator takes none, a key file signs as its service account, and
+    /// neither falls back to gcloud's application default credentials.
+    pub(crate) fn spanner(&self, cx: &App) -> Result<SpannerConfig, String> {
+        let read = |input: &Entity<InputState>| input.read(cx).value().trim().to_string();
+        let (project, instance, database) = (
+            read(&self.cloud_project),
+            read(&self.instance),
+            read(&self.database),
+        );
+        for (label, value) in [
+            ("Project", &project),
+            ("Instance", &instance),
+            ("Database", &database),
+        ] {
+            if value.is_empty() {
+                return Err(format!("{label} is required."));
+            }
+        }
+        let private_key = read(&self.private_key);
+        // Absolute for Snowflake's reason: a relative path resolves against
+        // wherever the app was launched from.
+        if !private_key.is_empty() && !private_key.starts_with('/') {
+            return Err("Key file must be an absolute path to the key file.".into());
+        }
+        Ok(SpannerConfig {
+            project,
+            instance,
+            database,
+            private_key,
+            emulator: read(&self.host),
+            statement_timeout: self.statement_timeout(cx)?,
         })
     }
 
@@ -1095,6 +1173,14 @@ pub(crate) fn summary(target: Target, srv: bool, typed: &Typed) -> Option<String
         Fields::Account => {
             (!typed.account.is_empty()).then(|| signed_in(database(typed.account.to_string())))
         }
+        Fields::Instance => match typed.host {
+            "" => Some(database(typed.account.to_string())),
+            emulator => Some(format!(
+                "{} on {emulator}",
+                database(typed.account.to_string())
+            )),
+        }
+        .filter(|_| !matches!(typed.account, "" | "/")),
         Fields::Server => {
             if typed.host.is_empty() && typed.service.is_none() {
                 return None;
@@ -1309,6 +1395,7 @@ pub(crate) fn default_profile_name(config: &ConnectionConfig) -> String {
         | ConnectionConfig::Turso { path, .. }
         | ConnectionConfig::DuckDb { path, .. } => file_stem(path).to_string(),
         ConnectionConfig::Snowflake(account) => account.database.clone(),
+        ConnectionConfig::Spanner(spanner) => spanner.database.clone(),
         // A database there is a number, which names nothing.
         ConnectionConfig::Redis(server) => server.host.clone(),
         ConnectionConfig::External(external) => external_name(external.plugin, external.speaks),

@@ -9,6 +9,7 @@
 pub(super) mod ansi;
 pub(super) mod clickhouse;
 pub(super) mod duckdb;
+pub(super) mod googlesql;
 pub(super) mod mysql;
 pub(super) mod postgres;
 pub(super) mod snowflake;

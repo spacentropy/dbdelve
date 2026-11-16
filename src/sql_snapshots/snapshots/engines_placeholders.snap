@@ -49,6 +49,12 @@ source: src/sql_snapshots.rs
 [clickhouse] database => |default|
 [clickhouse] user => |default|
 [clickhouse] path => |/path/to/app.sqlite|
+[spanner] name => |Named after the database|
+[spanner] host => |Emulator only|
+[spanner] port => ||
+[spanner] database => |Required|
+[spanner] user => |Required|
+[spanner] path => |/path/to/app.sqlite|
 [mssql] name => |Named after the database|
 [mssql] host => |localhost|
 [mssql] port => |1433|

@@ -249,6 +249,37 @@ source: src/sql_snapshots.rs
 [clickhouse] update => (none)
 [clickhouse] unpaged preview => |[] (0 keys)|
 [clickhouse] paged preview => |[] (0 keys)|
+[spanner] no order by => |[] (0 keys)|
+[spanner] simple => |[a asc=true] (1 keys)|
+[spanner] desc then bare => |[a asc=false ; b asc=true] (2 keys)|
+[spanner] lower-case desc => |[a asc=false] (1 keys)|
+[spanner] asc spelled out => |[a asc=true] (1 keys)|
+[spanner] ordinal => |[1 asc=true] (1 keys)|
+[spanner] expression => |[lower(a) asc=false ; b + 1 asc=true] (2 keys)|
+[spanner] double-quoted => |["Name" asc=false ; "id" asc=true] (2 keys)|
+[spanner] double-quoted, escaped quote => (none)
+[spanner] backticked, escaped tick => (none)
+[spanner] backticked => |[`Name` asc=false ; `id` asc=true] (2 keys)|
+[spanner] bracketed => (none)
+[spanner] subquery only => |[] (0 keys)|
+[spanner] subquery and outer => |[b asc=false] (1 keys)|
+[spanner] then limit => |[a asc=false] (1 keys)|
+[spanner] then limit offset => |[a asc=true] (1 keys)|
+[spanner] then offset fetch => (none)
+[spanner] where, group by, order by => |[a asc=false] (1 keys)|
+[spanner] union ordered => |[a asc=false] (1 keys)|
+[spanner] cte => |[a asc=true] (1 keys)|
+[spanner] trailing comment => |[a asc=true] (1 keys)|
+[spanner] semicolon => |[a asc=true] (1 keys)|
+[spanner] two statements => (none)
+[spanner] nulls first => (none)
+[spanner] order by all => (none)
+[spanner] explain => (none)
+[spanner] no from => (none)
+[spanner] unparseable => (none)
+[spanner] update => (none)
+[spanner] unpaged preview => |[] (0 keys)|
+[spanner] paged preview => |[] (0 keys)|
 [mssql] no order by => |[] (0 keys)|
 [mssql] simple => |[a asc=true] (1 keys)|
 [mssql] desc then bare => |[a asc=false ; b asc=true] (2 keys)|

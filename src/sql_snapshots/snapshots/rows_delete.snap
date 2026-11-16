@@ -474,6 +474,65 @@ source: src/sql_snapshots.rs
   |DELETE FROM `back\\\\slash`.`trail\\\\` WHERE `id` = '7'|
   = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:false superset:false subset:false other:false
 
+[spanner] id
+  |DELETE FROM `public`.`accounts` WHERE `id` = '7'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] composite
+  |DELETE FROM `public`.`accounts` WHERE `id` = '7' AND `Region` = 'eu-west \\x27x\\x27'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] awkward column
+  |DELETE FROM `public`.`accounts` WHERE `we"ird` = '1'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] empty keys
+  (none)
+
+[spanner] value single quote
+  |DELETE FROM `public`.`accounts` WHERE `Name` = 'it\\x27s'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] value backslash before quote
+  |DELETE FROM `public`.`accounts` WHERE `Name` = '\\\\\\x27'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] value unicode
+  |DELETE FROM `public`.`accounts` WHERE `Name` = '李小龍 ünï 😀'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] binary
+  |DELETE FROM `public`.`accounts` WHERE `payload` = '0xDEADbeef'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] relation plain
+  |DELETE FROM `public`.`accounts` WHERE `id` = '7'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] relation quotes
+  |DELETE FROM `my "odd" schema`.`it's \\x60tick\\x60 "dq"` WHERE `id` = '7'|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:false superset:false subset:false other:false
+
+[spanner] relation unicode
+  |DELETE FROM `données`.`Ünïcødé 表` WHERE `id` = '7'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] relation reserved
+  |DELETE FROM `select`.`order` WHERE `id` = '7'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] relation mixed case
+  |DELETE FROM `Sales`.`OrderLines` WHERE `id` = '7'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] relation brackets and dots
+  |DELETE FROM `[dbo]`.`a.b` WHERE `id` = '7'|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false
+
+[spanner] relation backslash
+  |DELETE FROM `back\\\\slash`.`trail\\\\` WHERE `id` = '7'|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:false superset:false subset:false other:false
+
 [mssql] id
   |DELETE FROM "public"."accounts" WHERE "id" = '7'|
   = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None matches_key=exact:true superset:false subset:false other:false

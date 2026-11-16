@@ -1321,8 +1321,9 @@ pub fn truncate_sql(engine: Engine, schema: &str, relation: &str) -> String {
     let qualified = engine.qualified(schema, relation);
     match engine.syntax() {
         Syntax::Sql => match engine.spec().sql.truncate {
-            Truncate::Truncate => format!("TRUNCATE TABLE {qualified};"),
+            Truncate::Table => format!("TRUNCATE TABLE {qualified};"),
             Truncate::DeleteFrom => format!("DELETE FROM {qualified};"),
+            Truncate::DeleteWhereTrue => format!("DELETE FROM {qualified} WHERE true;"),
         },
         Syntax::Mongo => format!("{}.deleteMany({{}})", mql::browse::handle(relation)),
         Syntax::Redis => "FLUSHDB".into(),

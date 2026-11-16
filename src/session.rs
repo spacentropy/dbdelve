@@ -480,6 +480,10 @@ impl Profile {
             ConnectionConfig::Snowflake(account) => Some(account),
             _ => None,
         };
+        let spanner = match &self.config {
+            ConnectionConfig::Spanner(spanner) => Some(spanner),
+            _ => None,
+        };
         let mongo = match &self.config {
             ConnectionConfig::MongoDb(mongo) => Some(mongo),
             _ => None,
@@ -494,6 +498,7 @@ impl Profile {
             host: server
                 .map(|server| server.host.clone())
                 .or_else(|| snowflake.and_then(|account| account.host.clone()))
+                .or_else(|| spanner.map(|spanner| spanner.emulator.clone()))
                 .unwrap_or_default(),
             port: server.and_then(|server| server.port),
             database: self.config.database().unwrap_or_default().to_string(),
@@ -520,9 +525,13 @@ impl Profile {
                 _ => None,
             },
             account: snowflake.map(|account| account.account.clone()),
-            private_key: snowflake.map(|account| account.private_key.clone()),
+            private_key: snowflake
+                .map(|account| account.private_key.clone())
+                .or_else(|| spanner.map(|spanner| spanner.private_key.clone())),
             warehouse: snowflake.and_then(|account| account.warehouse.clone()),
             role: snowflake.and_then(|account| account.role.clone()),
+            project: spanner.map(|spanner| spanner.project.clone()),
+            instance: spanner.map(|spanner| spanner.instance.clone()),
             srv: mongo.map(|mongo| mongo.srv),
             options: mongo.map(|mongo| mongo.options.clone()),
             login_database: mongo.and_then(|mongo| mongo.login_database.clone()),

@@ -144,6 +144,27 @@ services:
       timeout: 5s
       retries: 90
 
+  # The emulator's REST port; its gRPC one is not published. Pinned to the
+  # build the driver was checked against. It keeps nothing on disk and its
+  # image has no shell, so `spanner-seed` seeds it on every start.
+  spanner:
+    image: gcr.io/cloud-spanner-emulator/emulator:1.5.55
+    ports:
+      - "${DBDELVE_SPANNER_PORT:-59020}:9020"
+
+  spanner-seed:
+    image: curlimages/curl:8.17.0
+    entrypoint: ["/bin/sh", "/dbdelve-init/seed.sh"]
+    depends_on: [spanner]
+    volumes:
+      - ./dev/spanner:/dbdelve-init:ro
+    healthcheck:
+      # The marker is written last, once the rows are in.
+      test: ["CMD-SHELL", "test -f /tmp/dbdelve-seeded"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
   # Opt-in (`docker compose --profile db2 up -d db2`): the image is amd64-only,
   # 7 GB and takes minutes to boot emulated, so plain `up -d` leaves it out.
   db2:

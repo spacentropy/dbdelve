@@ -279,8 +279,16 @@ The core of the mode check is in `AGENTS.md`, "Connection modes". The detail:
   Read-write, Full and back through `choose_mode`, so it takes the titlebar
   menu's path and nothing else.
 - **`Connection::set_read_only`** holds a Read-only session to reads on Postgres
-  and MySQL, and on ClickHouse flags every request to carry `readonly=2`; SQLite has no such setting, Snowflake no session to hold it in,
+  and MySQL, and on ClickHouse flags every request to carry `readonly=2`; on
+  Spanner it sends every statement in a read-only transaction and refuses DDL
+  unsent. SQLite has no such setting, Snowflake no session to hold it in,
   and SQL Server no session-level switch.
+- **A bare literal is admitted on Spanner alone** (`SqlSpec::bare_literals`,
+  owner decision). GoogleSQL converts no string to a number or a `BOOL`, so
+  every arm above that admits a single-quoted literal also admits, there, a
+  bare `-?digits[.digits][e±digits]`, `TRUE` or `FALSE`: one literal node
+  read off its text (`sql::bare_literal`). An expression, a column, a cast or
+  a function call is still refused, and no other engine's gate changes.
 - **Through a plugin the hold is the dialect's own session statement**
   (`read_only_statement`), sent through the plugin as an ordinary query on its
   one session, so `holds_read_only` means the same over a plugin as built in.

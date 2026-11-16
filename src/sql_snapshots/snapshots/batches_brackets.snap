@@ -121,6 +121,18 @@ source: src/sql_snapshots.rs
 [clickhouse] ROLLBACK
   |ROLLBACK|
   = write_on=true select=false classify=ReadOnly [] gate ro=None rw=None full=None bracket=true
+[spanner] all_or_nothing => error: |Spanner commits each request on its own, so no transaction can span the chunks.|
+
+[spanner] transaction_start
+  (none)
+
+[spanner] COMMIT
+  |COMMIT|
+  = write_on=true select=false classify=ReadOnly [] gate ro=None rw=None full=None bracket=true
+
+[spanner] ROLLBACK
+  |ROLLBACK|
+  = write_on=true select=false classify=ReadOnly [] gate ro=None rw=None full=None bracket=true
 
 [mssql] all_or_nothing
   |BEGIN TRANSACTION|

@@ -259,6 +259,18 @@ engine = "redis"
 color = "red"
 
 [[profiles]]
+id = "span"
+name = "Spanner"
+host = "localhost:9020"
+database = "orders"
+user = ""
+engine = "spanner"
+project = "acme-prod"
+instance = "main"
+private_key = "/Users/ada/.config/gcloud/spanner-sa.json"
+statement_timeout = 30
+
+[[profiles]]
 id = "clk"
 name = "ClickHouse events"
 host = "ch.internal"

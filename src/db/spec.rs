@@ -8,7 +8,7 @@
 
 use super::{
     Builtin, ColumnDefinition, Fields, RelationKind, Syntax, builtins, clickhouse, duckdb, mongo,
-    mssql, mysql, postgres, redis,
+    mssql, mysql, postgres, redis, spanner,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -64,10 +64,13 @@ impl EngineSpec {
             true => identifier.replace('\\', r"\\"),
             false => identifier.to_string(),
         };
-        format!(
-            "{quote}{}{quote}",
-            identifier.replace(quote, &format!("{quote}{quote}"))
-        )
+        // GoogleSQL reads a doubled backtick as two names; its own `\``
+        // is where the gate's grammar ends the name, as `\'` ends a string.
+        let escaped = match self.sql.literal_quote {
+            LiteralQuote::HexEscape => format!(r"\x{:02x}", quote as u32),
+            LiteralQuote::Doubled => format!("{quote}{quote}"),
+        };
+        format!("{quote}{}{quote}", identifier.replace(quote, &escaped))
     }
 
     /// The inverse of [`Self::quote_identifier`]; anything that is not a
@@ -79,7 +82,11 @@ impl EngineSpec {
             .and_then(|rest| rest.strip_suffix(quote))
         {
             Some(inner) => {
-                let inner = inner.replace(&format!("{quote}{quote}"), &quote.to_string());
+                let escaped = match self.sql.literal_quote {
+                    LiteralQuote::HexEscape => format!(r"\x{:02x}", quote as u32),
+                    LiteralQuote::Doubled => format!("{quote}{quote}"),
+                };
+                let inner = inner.replace(&escaped, &quote.to_string());
                 match self.sql.identifier_backslash_escapes {
                     true => inner.replace(r"\\", "\\"),
                     false => inner,
@@ -90,6 +97,11 @@ impl EngineSpec {
     }
 
     pub fn qualified(&self, schema: &str, name: &str) -> String {
+        // Spanner's default schema has no name, and its relations are
+        // written bare.
+        if schema.is_empty() {
+            return self.quote_identifier(name);
+        }
         format!(
             "{}.{}",
             self.quote_identifier(schema),
@@ -98,6 +110,21 @@ impl EngineSpec {
     }
 
     pub fn quote_literal(&self, value: &str) -> String {
+        if self.sql.literal_quote == LiteralQuote::HexEscape {
+            let mut literal = String::with_capacity(value.len() + 2);
+            literal.push('\'');
+            for character in value.chars() {
+                match character {
+                    '\\' => literal.push_str(r"\\"),
+                    '\'' => literal.push_str(r"\x27"),
+                    '\n' => literal.push_str(r"\n"),
+                    '\r' => literal.push_str(r"\r"),
+                    other => literal.push(other),
+                }
+            }
+            literal.push('\'');
+            return literal;
+        }
         let value = match self.sql.backslash_escapes {
             true => value.replace('\\', r"\\"),
             false => value.to_string(),
@@ -405,6 +432,8 @@ pub struct SqlSpec {
     /// rather than lower. A server that folds neither way is treated as
     /// folding down: quoting a name it would have matched bare costs nothing.
     pub identifier_folds_upper: bool,
+    /// How a quote inside a string literal is written.
+    pub literal_quote: LiteralQuote,
     /// How a NUL in text is written, where a literal has no escape for it.
     pub nul_text: NulText,
     /// String literals are written `N'…'`, because a bare one is converted to
@@ -464,9 +493,16 @@ pub struct SqlSpec {
     pub row_terms: bool,
     /// How a grid edit writes bytes, `None` where it writes none.
     pub binary_literal: Option<BinaryLiteral>,
+    /// Whether the write gate admits a bare number or `TRUE`/`FALSE` as a
+    /// value wherever it admits a quoted one. GoogleSQL converts a quoted
+    /// value to no number and no `BOOL`, so Spanner's are written bare.
+    pub bare_literals: bool,
     /// What completion offers beside the catalog: the functions and value
     /// expressions the dialect has built in.
     pub builtins: &'static [Builtin],
+    /// What completion offers after a `|>`: the dialect's pipe operators,
+    /// none where it has no pipe syntax.
+    pub pipe_operators: &'static [&'static str],
 }
 
 impl SqlSpec {
@@ -475,6 +511,7 @@ impl SqlSpec {
         backslash_escapes: false,
         identifier_backslash_escapes: false,
         identifier_folds_upper: false,
+        literal_quote: LiteralQuote::Doubled,
         nul_text: NulText::Unspelled,
         national_strings: false,
         literal_offsets: true,
@@ -482,7 +519,7 @@ impl SqlSpec {
         params: Params::Question,
         paging: Paging::LimitOffset,
         select_top: SelectTop::Limit,
-        truncate: Truncate::Truncate,
+        truncate: Truncate::Table,
         foreign_table: ForeignTable::Foreign,
         materialized_view: MaterializedViewDrop::MaterializedView,
         count_all: CountAll::Count,
@@ -508,7 +545,9 @@ impl SqlSpec {
         transactions: true,
         row_terms: false,
         binary_literal: None,
+        bare_literals: false,
         builtins: &[],
+        pipe_operators: &[],
     };
 
     /// The word that opens a transaction around a generated multi-statement
@@ -539,6 +578,17 @@ impl IdentifierQuote {
             Self::Backtick => '`',
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiteralQuote {
+    /// `''`, the standard's.
+    Doubled,
+    /// `\x27`. GoogleSQL has no doubled quote, and its own `\'` is where the
+    /// grammar the gates parse with ends the string, so the write gate refuses
+    /// it. A line break goes out as `\n` or `\r` beside it: a quoted string
+    /// there cannot hold one.
+    HexEscape,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -586,9 +636,12 @@ pub enum SelectTop {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Truncate {
-    Truncate,
+    /// `TRUNCATE TABLE`.
+    Table,
     /// SQLite has no `TRUNCATE`.
     DeleteFrom,
+    /// Nor has Spanner, whose `DELETE` refuses to run without a `WHERE`.
+    DeleteWhereTrue,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -679,6 +732,11 @@ pub enum StatementSplit {
     Semicolon,
     /// T-SQL batches separated by `GO` lines.
     Batches,
+    /// At each `;` sqlparser's tokenizer for the dialect finds outside a
+    /// string or comment: GoogleSQL's `\'`, triple-quoted strings and `#`
+    /// comments, which the grammar reads otherwise, ending a string early or
+    /// taking `#` for an operator. GoogleSQL has no block holding a `;`.
+    Tokens,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -711,6 +769,9 @@ pub enum ParserDialect {
     Snowflake,
     MsSql,
     ClickHouse,
+    /// GoogleSQL, which Spanner shares with BigQuery: the dialect that reads
+    /// a query opening with `FROM` and its `|>` pipe operators.
+    BigQuery,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -734,6 +795,8 @@ pub enum RegexMatch {
     /// ClickHouse's `match` reads text only, so the column goes through
     /// `toString`. Unanchored, like `~`.
     Match,
+    /// GoogleSQL's, over the column cast to `STRING` for the same reason.
+    RegexpContains,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -748,6 +811,9 @@ pub enum SubstringMatch {
     /// `LIKE` over `toString(column)`: ClickHouse's `LIKE` takes only a string
     /// or a `FixedString`, and `toString` keeps `Nullable`, so a NULL stays NULL.
     LikeToString,
+    /// `LIKE` over `CAST(column AS STRING)`: GoogleSQL compares a pattern
+    /// with a `STRING` or `BYTES` and converts nothing on its own.
+    LikeCastString,
     /// `LIKE` with no escaping, for an engine with no default escape character
     /// (Db2, the SQL standard, Oracle, SQL Server) where `Like`'s backslash
     /// would match a literal backslash. The `ESCAPE` clause is not an option:
@@ -1294,6 +1360,104 @@ pub(crate) const SNOWFLAKE: EngineSpec = EngineSpec {
         ..Abilities::NONE
     },
     hooks: Hooks::NONE,
+};
+
+pub(crate) const SPANNER: EngineSpec = EngineSpec {
+    id: "spanner",
+    built_in_driver: true,
+    dbms_names: &["Cloud Spanner", "Spanner"],
+    label: "Spanner",
+    schemes: &["spanner"],
+    file_extensions: &[],
+    logo: "icons/engine-spanner.svg",
+    brand: 0x4285F4,
+    syntax: Syntax::Sql,
+    layout: Fields::Instance,
+    default_port: None,
+    takes_options: false,
+    takes_service: false,
+    resolves_srv: false,
+    system_databases: &[],
+    binary_types: &["bytes"],
+    // Spanner sends BYTES as base64, which no BinaryText reads.
+    binary_text: None,
+    numeric_types: &["int64", "float32", "float64"],
+    type_wrappers: &[],
+    hints: Hints {
+        host: "Emulator only",
+        database: "Required",
+        ..Hints::DEFAULT
+    },
+    sql: SqlSpec {
+        identifier_quote: IdentifierQuote::Backtick,
+        backslash_escapes: true,
+        // Quoted identifiers read the escapes strings do.
+        identifier_backslash_escapes: true,
+        literal_quote: LiteralQuote::HexEscape,
+        // No `ORDER BY`, no order: a page of an unsorted read is not stable.
+        paging: Paging::LimitOffsetByKey,
+        truncate: Truncate::DeleteWhereTrue,
+        foreign_table: ForeignTable::Table,
+        // `spanner::Connection` runs one submission as one read-write
+        // transaction, so a generated batch needs no brackets, and none
+        // could be written: `BEGIN` and `COMMIT` are not statements here.
+        implicit_transaction: true,
+        // As `spanner::Connection::structure` spells a generated column and
+        // an identity one in the default's place: the catalog keeps neither
+        // in `COLUMN_DEFAULT`.
+        generated_defaults: &[
+            DefaultMarker::Prefix("AS ("),
+            DefaultMarker::Prefix("GENERATED BY DEFAULT AS IDENTITY"),
+        ],
+        identity_defaults: &[DefaultMarker::Prefix("GENERATED BY DEFAULT AS IDENTITY")],
+        parser_dialect: ParserDialect::BigQuery,
+        regex: RegexMatch::RegexpContains,
+        substring: SubstringMatch::LikeCastString,
+        // A read goes out in a read-only transaction, which the server lets
+        // nothing write in, whatever the statement says.
+        read_only_session: ReadOnlySession::PerRequest,
+        stateless_requests: true,
+        // No Explain: a plan is a mode of the request rather than a
+        // statement, and its shape is one `explain.rs` does not read.
+        statement_split: StatementSplit::Tokens,
+        bare_literals: true,
+        builtins: builtins::googlesql::BUILTINS,
+        // Spanner's own list, which is shorter than BigQuery's.
+        pipe_operators: &[
+            "SELECT",
+            "EXTEND",
+            "SET",
+            "DROP",
+            "RENAME",
+            "AS",
+            "WHERE",
+            "AGGREGATE",
+            "JOIN",
+            "ORDER BY",
+            "LIMIT",
+            "UNION",
+            "INTERSECT",
+            "EXCEPT",
+            "TABLESAMPLE",
+        ],
+        ..SqlSpec::ANSI
+    },
+    abilities: Abilities {
+        edits: true,
+        inserts: true,
+        imports: true,
+        assigns_default: true,
+        copies_ddl: true,
+        switches_database: true,
+        chunk_refusal: Some(
+            "Spanner commits each request on its own, so no transaction can span the chunks.",
+        ),
+        ..Abilities::NONE
+    },
+    hooks: Hooks {
+        quote_value: Some(spanner::typed_literal),
+        ..Hooks::NONE
+    },
 };
 
 pub(crate) const SQL_SERVER: EngineSpec = EngineSpec {

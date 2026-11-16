@@ -8,7 +8,7 @@
 //! must neither queue behind a long run nor take its lock.
 
 mod edit;
-mod http;
+pub(super) mod http;
 #[cfg(test)]
 mod mock;
 mod tsv;

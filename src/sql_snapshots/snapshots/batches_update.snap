@@ -248,6 +248,30 @@ source: src/sql_snapshots.rs
   |DELETE FROM `public`.`accounts` WHERE `id` = '7' AND `Region` IS NULL AND `flag` IS NULL|
   = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
 
+[spanner] one row
+  |UPDATE `public`.`accounts` SET `Name` = 'it\\x27s' WHERE `id` = '7';|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] two rows
+  |UPDATE `public`.`accounts` SET `Name` = 'it\\x27s' WHERE `id` = '7';|
+  |UPDATE `public`.`accounts` SET `Name` = NULL WHERE `id` = '8';|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] composite keys
+  |UPDATE `public`.`accounts` SET `Name` = 'it\\x27s' WHERE `id` = '7' AND `Region` = 'eu-west \\x27x\\x27';|
+  |UPDATE `public`.`accounts` SET `Name` = 'it\\x27s' WHERE `id` = '8' AND `Region` = 'us';|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] default
+  |UPDATE `public`.`accounts` SET `Name` = DEFAULT WHERE `id` = '7';|
+  = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] empty
+  error: |There are no edits to apply.|
+
+[spanner] keyless
+  error: |dbdelve cannot name an edited row by its primary key.|
+
 [mssql] one row
   |UPDATE "public"."accounts" SET "Name" = N'it''s' WHERE "id" = '7';|
   = write_on=true select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None

@@ -500,7 +500,9 @@ impl Workspace {
                 ),
             ],
             // `from_url` refuses the scheme, so no URL arrives as one.
-            ConnectionConfig::Snowflake(_) | ConnectionConfig::External(_) => Vec::new(),
+            ConnectionConfig::Snowflake(_)
+            | ConnectionConfig::Spanner(_)
+            | ConnectionConfig::External(_) => Vec::new(),
         };
         let mongo = match &config {
             ConnectionConfig::MongoDb(mongo) => Some(mongo),
@@ -3313,6 +3315,14 @@ fn stored_config(
             role: stored.role.clone(),
             statement_timeout: stored.statement_timeout.unwrap_or_default(),
             schema: stored.schema.clone(),
+        }),
+        Engine::Spanner => ConnectionConfig::Spanner(crate::db::SpannerConfig {
+            project: stored.project.clone().unwrap_or_default(),
+            instance: stored.instance.clone().unwrap_or_default(),
+            database: stored.database.clone(),
+            private_key: stored.private_key.clone().unwrap_or_default(),
+            emulator: stored.host.clone(),
+            statement_timeout: stored.statement_timeout.unwrap_or_default(),
         }),
     }
 }

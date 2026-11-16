@@ -1570,6 +1570,202 @@ source: src/sql_snapshots.rs
   |TRUNCATE TABLE `back\\\\slash`.`trail\\\\`;|
   = write_on=false select=false classify=Full [Truncate] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Truncate))
 
+[spanner] plain · select top
+  |SELECT * FROM `public`.`accounts` LIMIT 100|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] plain · drop Table
+  |DROP TABLE `public`.`accounts`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] plain · drop PartitionedTable
+  |DROP TABLE `public`.`accounts`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] plain · drop View
+  |DROP VIEW `public`.`accounts`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] plain · drop MaterializedView
+  |DROP MATERIALIZED VIEW `public`.`accounts`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] plain · drop ForeignTable
+  |DROP TABLE `public`.`accounts`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] plain · truncate
+  |DELETE FROM `public`.`accounts` WHERE true;|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] quotes · select top
+  |SELECT * FROM `my "odd" schema`.`it's \\x60tick\\x60 "dq"` LIMIT 100|
+  = write_on=false select=false classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] quotes · drop Table
+  |DROP TABLE `my "odd" schema`.`it's \\x60tick\\x60 "dq"`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] quotes · drop PartitionedTable
+  |DROP TABLE `my "odd" schema`.`it's \\x60tick\\x60 "dq"`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] quotes · drop View
+  |DROP VIEW `my "odd" schema`.`it's \\x60tick\\x60 "dq"`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] quotes · drop MaterializedView
+  |DROP MATERIALIZED VIEW `my "odd" schema`.`it's \\x60tick\\x60 "dq"`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] quotes · drop ForeignTable
+  |DROP TABLE `my "odd" schema`.`it's \\x60tick\\x60 "dq"`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] quotes · truncate
+  |DELETE FROM `my "odd" schema`.`it's \\x60tick\\x60 "dq"` WHERE true;|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] unicode · select top
+  |SELECT * FROM `données`.`Ünïcødé 表` LIMIT 100|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] unicode · drop Table
+  |DROP TABLE `données`.`Ünïcødé 表`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] unicode · drop PartitionedTable
+  |DROP TABLE `données`.`Ünïcødé 表`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] unicode · drop View
+  |DROP VIEW `données`.`Ünïcødé 表`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] unicode · drop MaterializedView
+  |DROP MATERIALIZED VIEW `données`.`Ünïcødé 表`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] unicode · drop ForeignTable
+  |DROP TABLE `données`.`Ünïcødé 表`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] unicode · truncate
+  |DELETE FROM `données`.`Ünïcødé 表` WHERE true;|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] reserved · select top
+  |SELECT * FROM `select`.`order` LIMIT 100|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] reserved · drop Table
+  |DROP TABLE `select`.`order`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] reserved · drop PartitionedTable
+  |DROP TABLE `select`.`order`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] reserved · drop View
+  |DROP VIEW `select`.`order`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] reserved · drop MaterializedView
+  |DROP MATERIALIZED VIEW `select`.`order`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] reserved · drop ForeignTable
+  |DROP TABLE `select`.`order`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] reserved · truncate
+  |DELETE FROM `select`.`order` WHERE true;|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] mixed case · select top
+  |SELECT * FROM `Sales`.`OrderLines` LIMIT 100|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] mixed case · drop Table
+  |DROP TABLE `Sales`.`OrderLines`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] mixed case · drop PartitionedTable
+  |DROP TABLE `Sales`.`OrderLines`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] mixed case · drop View
+  |DROP VIEW `Sales`.`OrderLines`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] mixed case · drop MaterializedView
+  |DROP MATERIALIZED VIEW `Sales`.`OrderLines`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] mixed case · drop ForeignTable
+  |DROP TABLE `Sales`.`OrderLines`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] mixed case · truncate
+  |DELETE FROM `Sales`.`OrderLines` WHERE true;|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] brackets and dots · select top
+  |SELECT * FROM `[dbo]`.`a.b` LIMIT 100|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] brackets and dots · drop Table
+  |DROP TABLE `[dbo]`.`a.b`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] brackets and dots · drop PartitionedTable
+  |DROP TABLE `[dbo]`.`a.b`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] brackets and dots · drop View
+  |DROP VIEW `[dbo]`.`a.b`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] brackets and dots · drop MaterializedView
+  |DROP MATERIALIZED VIEW `[dbo]`.`a.b`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] brackets and dots · drop ForeignTable
+  |DROP TABLE `[dbo]`.`a.b`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] brackets and dots · truncate
+  |DELETE FROM `[dbo]`.`a.b` WHERE true;|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
+[spanner] backslash · select top
+  |SELECT * FROM `back\\\\slash`.`trail\\\\` LIMIT 100|
+  = write_on=false select=false classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] backslash · drop Table
+  |DROP TABLE `back\\\\slash`.`trail\\\\`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] backslash · drop PartitionedTable
+  |DROP TABLE `back\\\\slash`.`trail\\\\`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] backslash · drop View
+  |DROP VIEW `back\\\\slash`.`trail\\\\`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] backslash · drop MaterializedView
+  |DROP MATERIALIZED VIEW `back\\\\slash`.`trail\\\\`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] backslash · drop ForeignTable
+  |DROP TABLE `back\\\\slash`.`trail\\\\`;|
+  = write_on=false select=false classify=Full [Drop] gate ro=Some(Upgrade(Full)) rw=Some(Upgrade(Full)) full=Some(Confirm(Drop))
+
+[spanner] backslash · truncate
+  |DELETE FROM `back\\\\slash`.`trail\\\\` WHERE true;|
+  = write_on=false select=false classify=ReadWrite [] gate ro=Some(Upgrade(ReadWrite)) rw=None full=None
+
 [mssql] plain · select top
   |SELECT TOP 100 * FROM "public"."accounts"|
   = write_on=false select=false classify=ReadOnly [] gate ro=None rw=None full=None

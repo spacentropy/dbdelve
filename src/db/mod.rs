@@ -38,6 +38,7 @@ pub(crate) mod plugin;
 mod postgres;
 mod redis;
 mod snowflake;
+mod spanner;
 mod spec;
 mod sqlite;
 mod ssh;
@@ -64,6 +65,7 @@ pub use ssh::askpass;
 pub use mongo::MongoConfig;
 pub use postgres::PostgresConfig;
 pub use snowflake::{SnowflakeConfig, account_identifier, normalize_host};
+pub use spanner::SpannerConfig;
 #[cfg(test)]
 pub use spec::{Abilities, Hints, Hooks};
 pub use spec::{
@@ -244,6 +246,7 @@ pub enum Engine {
     DuckDb,
     Snowflake,
     ClickHouse,
+    Spanner,
     SqlServer,
     MongoDb,
     Redis,
@@ -262,6 +265,9 @@ pub enum Fields {
     File,
     /// An account reached over HTTPS with a private key.
     Account,
+    /// A database inside a cloud project's instance, signed in to with a key
+    /// file, the platform's own credentials, or nothing on an emulator.
+    Instance,
     /// A plugin driver's own connection string, a user and a password: the
     /// address is in the string, in keys only the driver knows.
     ConnectionString,
@@ -362,6 +368,7 @@ impl Engine {
             Self::DuckDb => &spec::DUCKDB,
             Self::Snowflake => &spec::SNOWFLAKE,
             Self::ClickHouse => &spec::CLICKHOUSE,
+            Self::Spanner => &spec::SPANNER,
             Self::SqlServer => &spec::SQL_SERVER,
             Self::MongoDb => &spec::MONGODB,
             Self::Redis => &spec::REDIS,
@@ -395,7 +402,7 @@ impl Engine {
     }
 
     /// Presentation order, which is the order the form's chips appear in.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Postgres,
         Self::MySql,
         Self::MariaDb,
@@ -404,6 +411,7 @@ impl Engine {
         Self::DuckDb,
         Self::Snowflake,
         Self::ClickHouse,
+        Self::Spanner,
         Self::SqlServer,
         Self::MongoDb,
         Self::Redis,
@@ -1210,6 +1218,7 @@ pub enum ConnectionConfig {
     },
     Snowflake(SnowflakeConfig),
     ClickHouse(ServerConfig),
+    Spanner(SpannerConfig),
     MongoDb(MongoConfig),
     /// `database` is the database's number, blank for 0.
     Redis(ServerConfig),
@@ -1248,6 +1257,7 @@ impl ConnectionConfig {
             Self::DuckDb { .. } => Engine::DuckDb,
             Self::Snowflake(_) => Engine::Snowflake,
             Self::ClickHouse(_) => Engine::ClickHouse,
+            Self::Spanner(_) => Engine::Spanner,
             Self::MongoDb(_) => Engine::MongoDb,
             Self::Redis(_) => Engine::Redis,
             Self::External(external) => external.speaks,
@@ -1279,6 +1289,7 @@ impl ConnectionConfig {
             | Self::Turso { .. }
             | Self::DuckDb { .. }
             | Self::Snowflake(_)
+            | Self::Spanner(_)
             | Self::External(_) => None,
         }
     }
@@ -1298,6 +1309,7 @@ impl ConnectionConfig {
             | Self::Turso { .. }
             | Self::DuckDb { .. }
             | Self::Snowflake(_)
+            | Self::Spanner(_)
             | Self::External(_) => None,
         }
     }
@@ -1372,6 +1384,7 @@ impl ConnectionConfig {
             | Self::ClickHouse(server) => server.database = name,
             Self::MongoDb(mongo) => mongo.set_database(name),
             Self::Snowflake(account) => account.set_database(name),
+            Self::Spanner(spanner) => spanner.database = name,
             // Listed as `db3`, stored as the number a URL's path holds.
             Self::Redis(server) => {
                 server.database = name.strip_prefix("db").unwrap_or(&name).to_string();
@@ -1398,6 +1411,7 @@ impl ConnectionConfig {
     pub fn database(&self) -> Option<&str> {
         match self {
             Self::Snowflake(account) => Some(&account.database),
+            Self::Spanner(spanner) => Some(&spanner.database),
             Self::DuckDb { database, .. } => Some(database),
             _ => self.server().map(|server| server.database.as_str()),
         }
@@ -1478,6 +1492,9 @@ impl ConnectionConfig {
             Engine::Snowflake => {
                 Err("Snowflake has no connection URL. Fill the fields in instead.".to_string())
             }
+            Engine::Spanner => {
+                Err("Spanner has no connection URL. Fill the fields in instead.".to_string())
+            }
             Engine::Generic => Err(GENERIC_REFUSAL.to_string()),
         }
     }
@@ -1504,6 +1521,7 @@ impl ConnectionConfig {
                 statement_timeout, ..
             } => *statement_timeout,
             Self::Snowflake(account) => account.statement_timeout,
+            Self::Spanner(spanner) => spanner.statement_timeout,
             Self::External(external) => external.statement_timeout,
         }
     }
@@ -1544,6 +1562,7 @@ impl ConnectionConfig {
             Self::DuckDb { path, .. } if path == DUCKDB_IN_MEMORY => "in memory".to_string(),
             Self::DuckDb { path, .. } => path.clone(),
             Self::Snowflake(account) => account.host(),
+            Self::Spanner(spanner) => spanner.endpoint(),
             // The string can carry a password of its own, so only a DSN,
             // which is a name and nothing else, is shown.
             Self::External(external) if !external.connection.contains('=') => {
@@ -1580,6 +1599,7 @@ pub enum Connection {
     DuckDb(duckdb::Connection),
     Snowflake(snowflake::Connection),
     ClickHouse(clickhouse::Connection),
+    Spanner(spanner::Connection),
     MongoDb(mongo::Connection),
     Redis(redis::Connection),
     External(external::Connection),
@@ -1623,6 +1643,9 @@ impl Connection {
             ConnectionConfig::Snowflake(account) => {
                 snowflake::Connection::open(&account).map(Self::Snowflake)
             }
+            ConnectionConfig::Spanner(spanner) => {
+                spanner::Connection::open(&spanner).map(Self::Spanner)
+            }
             ConnectionConfig::ClickHouse(server) => {
                 clickhouse::Connection::open(&server).map(Self::ClickHouse)
             }
@@ -1663,6 +1686,7 @@ impl Connection {
             Self::DuckDb(connection) => connection.query(sql, fetch),
             Self::Snowflake(connection) => connection.query_with(sql, cancel, fetch),
             Self::ClickHouse(connection) => connection.query(sql, cancel, fetch),
+            Self::Spanner(connection) => connection.query(sql, cancel, fetch),
             Self::MongoDb(connection) => connection.query(sql, cancel, fetch),
             Self::Redis(connection) => connection.query(sql, fetch),
             Self::External(connection) => connection.query(sql, cancel, fetch),
@@ -1831,7 +1855,7 @@ impl Connection {
         read_only: bool,
     ) -> Result<QueryResult, DbError> {
         let opened = match self {
-            Self::Snowflake(_) | Self::MongoDb(_) | Self::External(_) => {
+            Self::Snowflake(_) | Self::Spanner(_) | Self::MongoDb(_) | Self::External(_) => {
                 return self.query(sql, cancel, fetch);
             }
             // Never joined to the arm above: that would put every statement
@@ -1881,7 +1905,7 @@ impl Connection {
     /// keep no session to hold apart, so it is this one.
     pub fn apart(&self) -> Result<Self, DbError> {
         match self {
-            Self::Snowflake(_) | Self::MongoDb(_) => Ok(self.clone()),
+            Self::Snowflake(_) | Self::Spanner(_) | Self::MongoDb(_) => Ok(self.clone()),
             Self::ClickHouse(connection) => Ok(Self::ClickHouse(connection.apart())),
             Self::Postgres(connection) => connection.alongside().map(Self::Postgres),
             Self::MySql(connection) => connection.alongside().map(Self::MySql),
@@ -1907,6 +1931,7 @@ impl Connection {
             Self::MySql(connection) => connection.on_database(database).map(Self::MySql),
             Self::Redis(connection) => connection.on_database(database).map(Self::Redis),
             Self::Snowflake(connection) => Ok(Self::Snowflake(connection.on_database(database))),
+            Self::Spanner(connection) => Ok(Self::Spanner(connection.on_database(database))),
             Self::MongoDb(connection) => Ok(Self::MongoDb(connection.on_database(database))),
             Self::Postgres(connection) => connection.on_database(database).map(Self::Postgres),
             Self::SqlServer(connection) => connection.on_database(database).map(Self::SqlServer),
@@ -1995,6 +2020,7 @@ impl Connection {
             | Self::Sqlite(_)
             | Self::Turso(_)
             | Self::DuckDb(_)
+            | Self::Spanner(_)
             | Self::MongoDb(_) => self.query(
                 sql,
                 cancel,
@@ -2025,6 +2051,7 @@ impl Connection {
             Self::DuckDb(connection) => connection.catalog(),
             Self::Snowflake(connection) => connection.catalog(),
             Self::ClickHouse(connection) => connection.catalog(),
+            Self::Spanner(connection) => connection.catalog(),
             Self::MongoDb(connection) => connection.catalog(),
             Self::Redis(connection) => connection.catalog(),
             Self::External(connection) => connection.catalog(),
@@ -2063,7 +2090,8 @@ impl Connection {
                     connection.sequences()
                 })
             }
-            Self::ClickHouse(_) => Ok(Catalog::default()),
+            // Spanner's routines and sequences are not listed (v1).
+            Self::ClickHouse(_) | Self::Spanner(_) => Ok(Catalog::default()),
             Self::MongoDb(connection) => connection.routines(),
             Self::Redis(_) | Self::External(_) => Ok(Catalog::default()),
         }
@@ -2089,6 +2117,7 @@ impl Connection {
             | Self::DuckDb(_)
             | Self::Snowflake(_)
             | Self::ClickHouse(_)
+            | Self::Spanner(_)
             | Self::Redis(_)
             | Self::External(_) => Ok(Sizes::new()),
         }
@@ -2108,9 +2137,11 @@ impl Connection {
             Self::DuckDb(connection) => connection.references(schema, relation),
             Self::External(connection) => connection.references(schema, relation),
             // Nothing declares one document's field a reference to another's.
-            Self::Snowflake(_) | Self::ClickHouse(_) | Self::MongoDb(_) | Self::Redis(_) => {
-                Ok(Vec::new())
-            }
+            Self::Snowflake(_)
+            | Self::ClickHouse(_)
+            | Self::Spanner(_)
+            | Self::MongoDb(_)
+            | Self::Redis(_) => Ok(Vec::new()),
         }
     }
 
@@ -2125,6 +2156,7 @@ impl Connection {
             Self::Redis(connection) => connection.databases(),
             Self::Snowflake(connection) => connection.databases(),
             Self::ClickHouse(connection) => connection.databases(),
+            Self::Spanner(connection) => connection.databases(),
             Self::DuckDb(connection) => connection.databases(),
             Self::Sqlite(_) | Self::Turso(_) | Self::External(_) => Ok(Databases::default()),
         }?;
@@ -2219,6 +2251,7 @@ impl Connection {
             Self::DuckDb(connection) => connection.structure(schema, relation),
             Self::Snowflake(connection) => connection.structure(schema, relation),
             Self::ClickHouse(connection) => connection.structure(schema, relation),
+            Self::Spanner(connection) => connection.structure(schema, relation),
             Self::MongoDb(connection) => connection.structure(schema, relation),
             Self::Redis(connection) => connection.structure(schema, relation),
             Self::External(connection) => connection.structure(schema, relation),
@@ -2245,6 +2278,7 @@ impl Connection {
             Self::ClickHouse(_) | Self::MongoDb(_) | Self::Redis(_) => Err(plain_error(
                 "This engine declares no foreign keys to draw.".into(),
             )),
+            Self::Spanner(_) => Err(plain_error("Diagrams are not offered on Spanner.".into())),
             Self::External(connection) => connection.schema_graph(schema),
         }
     }
@@ -2273,6 +2307,7 @@ impl Connection {
             Self::DuckDb(connection) => connection.ddl(schema, relation),
             Self::Snowflake(connection) => connection.ddl(schema, relation, kind),
             Self::ClickHouse(connection) => connection.ddl(schema, relation, kind),
+            Self::Spanner(connection) => connection.ddl(schema, relation),
             Self::MongoDb(connection) => connection.ddl(schema, relation),
             Self::Redis(connection) => connection.ddl(schema, relation),
             Self::External(_) => Err(plain_error(
@@ -2295,6 +2330,7 @@ impl Connection {
             Self::Sqlite(_)
             | Self::Turso(_)
             | Self::ClickHouse(_)
+            | Self::Spanner(_)
             | Self::MongoDb(_)
             | Self::Redis(_)
             | Self::External(_) => Err(plain_error(
@@ -2326,7 +2362,11 @@ impl Connection {
     pub fn cancel(&self, cancel: &CancelToken) -> Result<(), DbError> {
         let stops_alongside = !matches!(
             self,
-            Self::Snowflake(_) | Self::ClickHouse(_) | Self::MongoDb(_) | Self::External(_)
+            Self::Snowflake(_)
+                | Self::ClickHouse(_)
+                | Self::Spanner(_)
+                | Self::MongoDb(_)
+                | Self::External(_)
         );
         if let Some(Some(sent)) = cancel.stop_alongside(|alongside| {
             stops_alongside.then(|| {
@@ -2347,6 +2387,7 @@ impl Connection {
             Self::DuckDb(connection) => connection.cancel(),
             Self::Snowflake(connection) => connection.cancel(cancel),
             Self::ClickHouse(connection) => connection.cancel(cancel),
+            Self::Spanner(connection) => connection.cancel(cancel),
             Self::MongoDb(connection) => connection.cancel(cancel),
             Self::Redis(connection) => connection.cancel(),
             Self::External(connection) => connection.cancel(cancel),
@@ -2371,6 +2412,7 @@ impl Connection {
             | Self::DuckDb(_)
             | Self::Snowflake(_)
             | Self::ClickHouse(_)
+            | Self::Spanner(_)
             | Self::MongoDb(_)
             | Self::Redis(_) => false,
         }
@@ -2387,6 +2429,7 @@ impl Connection {
     pub fn set_read_only(&self, read_only: bool) -> Result<(), DbError> {
         match self {
             Self::ClickHouse(connection) => return connection.set_read_only(read_only),
+            Self::Spanner(connection) => return connection.set_read_only(read_only),
             Self::External(connection) => return connection.set_read_only(read_only),
             _ => {}
         }
@@ -2399,6 +2442,7 @@ impl Connection {
             Self::DuckDb(_) => Engine::DuckDb,
             Self::Snowflake(_) => Engine::Snowflake,
             Self::ClickHouse(_) => Engine::ClickHouse,
+            Self::Spanner(_) => Engine::Spanner,
             Self::MongoDb(_) => Engine::MongoDb,
             Self::Redis(_) => Engine::Redis,
             Self::External(connection) => connection.speaks(),
@@ -4276,7 +4320,7 @@ mod tests {
     }
 
     #[test]
-    fn new_row_is_withheld_only_from_a_mongo_view() {
+    fn new_row_is_withheld_only_from_a_mongo_or_spanner_view() {
         // Generic SQL is left out: it has no abilities of its own, since a
         // plugin target forces every write off.
         for engine in Target::tiles(&[]).map(|target| target.engine) {
@@ -4286,7 +4330,8 @@ mod tests {
             );
             assert_eq!(
                 Target::built_in(engine).takes_inserts(RelationKind::View),
-                engine != Engine::MongoDb,
+                // A Spanner view is read-only on the server.
+                !matches!(engine, Engine::MongoDb | Engine::Spanner),
                 "{engine:?}"
             );
             assert_eq!(
@@ -4575,16 +4620,32 @@ mod tests {
         );
         assert_eq!(Engine::MySql.quote_identifier("odd`name"), "`odd``name`");
 
-        for engine in Engine::ALL
-            .into_iter()
-            .filter(|e| !matches!(e, Engine::SqlServer | Engine::MongoDb | Engine::Redis))
-        {
+        for engine in Engine::ALL.into_iter().filter(|e| {
+            !matches!(
+                e,
+                Engine::SqlServer | Engine::MongoDb | Engine::Redis | Engine::Spanner
+            )
+        }) {
             assert_eq!(
                 engine.quote_literal("odd'value"),
                 "'odd''value'",
                 "{engine:?}"
             );
         }
+        // GoogleSQL has no doubled quote, and its own `\'` and `` \` `` are
+        // where the gates' grammar ends a string and a name.
+        assert_eq!(
+            Engine::Spanner.quote_literal("odd'value"),
+            r"'odd\x27value'"
+        );
+        assert_eq!(
+            Engine::Spanner.quote_identifier("odd`name"),
+            r"`odd\x60name`"
+        );
+        assert_eq!(
+            Engine::Spanner.unquote_identifier(r"`odd\x60name`"),
+            "odd`name"
+        );
         // A redis-cli word: bare where it can be, else double-quoted.
         assert_eq!(Engine::Redis.quote_literal("odd'value"), "\"odd'value\"");
         assert_eq!(Engine::Redis.quote_identifier("user:1"), "user:1");

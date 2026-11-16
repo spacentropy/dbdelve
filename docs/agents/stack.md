@@ -86,6 +86,11 @@ connector chain (TCP, the `Watched` transport that checks Cancel and an idle
 bound between ticks, then TLS) in `src/db/clickhouse/http.rs`, and `memchr`
 for finding a late exception's marker across reads.
 
+Spanner is REST over the same `ureq`, through `clickhouse::http`'s watched
+agent, signing with `ring` and Snowflake's JWT code: no gRPC, no new
+dependency. `sqlparser`'s `BigQueryDialect` reads GoogleSQL for the
+classifier, the statement split and the first-keyword routing.
+
 **Do not put tokio on GPUI's executor.** GPUI's executor is `async-task` with no
 reactor (Grand Central Dispatch on macOS). A tokio future on
 `cx.background_executor().spawn(...)` _panics_ the moment it touches a socket or

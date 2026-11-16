@@ -6,7 +6,7 @@ database URLs listed in `AGENTS.md`.
 
 The ports can be moved with `DBDELVE_POSTGRES_PORT`, `DBDELVE_MYSQL_PORT`,
 `DBDELVE_MARIADB_PORT`, `DBDELVE_MSSQL_PORT`, `DBDELVE_REDIS_PORT`, `DBDELVE_MONGO_PORT` and
-`DBDELVE_CLICKHOUSE_PORT`. The SQL Server image is
+`DBDELVE_CLICKHOUSE_PORT` and `DBDELVE_SPANNER_PORT`. The SQL Server image is
 `linux/amd64` only, so on Apple silicon it runs under emulation and takes a
 while to come up.
 
@@ -27,6 +27,27 @@ Releasing after socket shutdown races the client's next request and invents a
 `SESSION_IS_LOCKED`. A stall after an entire non-chunked body is complete too;
 incomplete delayed or stalled executions hold their session until they finish
 or are stopped.
+
+The Spanner emulator (`cloud-spanner-emulator/emulator:1.5.55`) serves its
+REST API on 59020; its gRPC port is not published, since the driver speaks
+REST. It keeps nothing on disk and its image has no shell, so `spanner-seed`,
+a curl container, waits for it on every start, creates project
+`dbdelve-dev`, instance `dev` and database `dbdelve_dev` (`singers`, the
+interleaved `albums` with a foreign key, a default and a unique index storing
+a column, the `singer_names` view, the string-keyed `labels` and
+`conformance`) and writes the marker its healthcheck reads. Rows go in as
+mutations committed in a single-use transaction, which needs no transaction
+id carried between calls. The live tests read `dbdelve_SPANNER_EMULATOR` (the
+REST address) and run with `cargo test spanner -- --include-ignored`. Three
+things about this emulator shape those tests: it builds a result whole before
+streaming a row, so an "endless" read is 16 000 rows and a larger one is
+killed for memory; it runs a query on after its client hangs up, so the
+cancel test's runaway is one that ends on its own; and it answers a
+statement's error over REST with an empty 400 (or `failed to marshal error
+message`), so error text and positions are tested against the mock
+(`spanner/mock.rs`), which serves the service's framing and error body from
+Google's REST reference. It reads no pipe syntax (1.5.55 and 1.5.59 both
+refuse it), and takes one read-write transaction at a time in all.
 
 Snowflake has no container. Its unit tests need nothing, and neither do its
 mock tests: `snowflake/mock.rs` is a loopback HTTP server replaying responses

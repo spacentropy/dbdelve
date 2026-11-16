@@ -334,6 +334,21 @@ open_queries = []
 open_objects = []
 
 [[profiles]]
+id = "span"
+name = "Spanner"
+host = "localhost:9020"
+database = "orders"
+user = ""
+engine = "spanner"
+private_key = "/Users/ada/.config/gcloud/spanner-sa.json"
+project = "acme-prod"
+instance = "main"
+statement_timeout = 30
+confirmed = []
+open_queries = []
+open_objects = []
+
+[[profiles]]
 id = "clk"
 name = "ClickHouse events"
 host = "ch.internal"

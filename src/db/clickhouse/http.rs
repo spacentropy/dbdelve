@@ -143,6 +143,12 @@ pub fn agent(
         Scheme::Http => TlsConfig::default(),
         Scheme::Https => tls_config(server.sslmode, server.root_certificate.as_deref())?,
     };
+    Ok(watched_agent(tls, tunnel, bounds))
+}
+
+/// An agent bounded by `bounds`, dialling through `tunnel` when there is one,
+/// with [`Watched`] under `tls`. Spanner's too, on the platform's roots.
+pub fn watched_agent(tls: TlsConfig, tunnel: Option<Arc<Tunnel>>, bounds: Bounds) -> Agent {
     let config = Config::builder()
         // The server explains a failed statement in the body.
         .http_status_as_error(false)
@@ -158,14 +164,14 @@ pub fn agent(
     // The watched TCP, then TLS: the watch sees ciphertext arrive, which is
     // the only idleness there is to measure.
     let connector = ().chain(WatchedConnector).chain(RustlsConnector::default());
-    Ok(match tunnel {
+    match tunnel {
         Some(tunnel) => Agent::with_parts(
             config,
             connector,
             TunnelResolver::new(move || tunnel.dial()),
         ),
         None => Agent::with_parts(config, connector, DefaultResolver::default()),
-    })
+    }
 }
 
 /// Resolves every name to the tunnel's local end, asked afresh per socket so

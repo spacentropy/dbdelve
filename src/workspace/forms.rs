@@ -297,6 +297,30 @@ impl Workspace {
                     );
                 }
             }
+            // No encryption row: the service is HTTPS and always verified,
+            // and the emulator plain HTTP because that is what the field is.
+            Fields::Instance => {
+                for (id, label, input) in [
+                    ("project", "Project", &form.cloud_project),
+                    ("instance", "Instance", &form.instance),
+                    ("database", "Database", &form.database),
+                    ("private-key", "Key file", &form.private_key),
+                    // Last, because it is blank against the real service.
+                    ("host", "Emulator", &form.host),
+                ] {
+                    let control = match id {
+                        "private-key" | "host" => mono_field(input),
+                        _ => bare(input),
+                    };
+                    connection.push(
+                        field_row(id, label, input, control, t)
+                            .when(id == "private-key", |row| {
+                                row.child(browse_button("browse-private-key", input, t, cx))
+                            })
+                            .into_any_element(),
+                    );
+                }
+            }
             Fields::Server => {
                 // An SRV name takes no port: its records name each server's
                 // own.
@@ -4289,7 +4313,7 @@ fn shown_file_fields<'a>(form: &'a ConnectionForm, cx: &App) -> Vec<&'a Entity<I
     let fields = form.target().fields();
     match fields {
         Fields::File => vec![&form.path],
-        Fields::Account => vec![&form.private_key],
+        Fields::Account | Fields::Instance => vec![&form.private_key],
         Fields::Server | Fields::ConnectionString => {
             let mut shown = Vec::new();
             if fields == Fields::Server && form.shows_root_certificate(cx) {

@@ -217,6 +217,30 @@ source: src/sql_snapshots.rs
 
 [clickhouse] delete · Analyze
   (none)
+[spanner] plain · Plan · explainable => |ok|
+
+[spanner] plain · Plan
+  (none)
+[spanner] filtered · Plan · explainable => |ok|
+
+[spanner] filtered · Plan
+  (none)
+[spanner] delete · Plan · explainable => |ok|
+
+[spanner] delete · Plan
+  (none)
+[spanner] plain · Analyze · explainable => |ok|
+
+[spanner] plain · Analyze
+  (none)
+[spanner] filtered · Analyze · explainable => |ok|
+
+[spanner] filtered · Analyze
+  (none)
+[spanner] delete · Analyze · explainable => |ok|
+
+[spanner] delete · Analyze
+  (none)
 [mssql] plain · Plan · explainable => |ok|
 
 [mssql] plain · Plan

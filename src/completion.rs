@@ -706,6 +706,15 @@ impl SchemaCompletions {
             return self.aliased(around, self.relations_in(qualifier), scope, wanted);
         }
 
+        // A pipe operator, and nothing else, follows a `|>`.
+        let operators = self.engine.spec().sql.pipe_operators;
+        if !operators.is_empty() && before.trim_end().ends_with("|>") {
+            return operators
+                .iter()
+                .map(|operator| Candidate::new(*operator, None, CompletionItemKind::KEYWORD))
+                .collect();
+        }
+
         // A qualifier `qualifier_before` cannot read, `"audit".` say, is still
         // one, and qualifying after it would write a second.
         let qualify = self.qualify && !before.ends_with('.');
@@ -1769,6 +1778,39 @@ mod tests {
         .into_iter()
         .map(|(_, candidate)| candidate.label)
         .collect()
+    }
+
+    #[test]
+    fn after_a_pipe_spanner_offers_its_pipe_operators_and_nothing_else() {
+        let offered = |engine: Engine, sql: &str| -> Vec<String> {
+            SchemaCompletions {
+                engine,
+                ..catalog()
+            }
+            .items(sql, sql.len())
+            .0
+            .into_iter()
+            .map(|(_, candidate)| candidate.label)
+            .collect()
+        };
+        assert_eq!(offered(Engine::Spanner, "FROM accounts |> WH"), ["WHERE"]);
+        assert!(
+            offered(Engine::Spanner, "FROM accounts |> a")
+                .iter()
+                .all(|label| [
+                    "AGGREGATE",
+                    "AS",
+                    "TABLESAMPLE",
+                    "DROP",
+                    "RENAME",
+                    "SET",
+                    "EXTEND"
+                ]
+                .contains(&label.as_str())),
+        );
+        // Elsewhere the same text is not a pipe, and keywords come as ever.
+        assert!(offered(Engine::Postgres, "FROM accounts |> WH").contains(&"WHERE".to_string()));
+        assert!(offered(Engine::Postgres, "FROM accounts |> a").contains(&"accounts".to_string()));
     }
 
     #[test]

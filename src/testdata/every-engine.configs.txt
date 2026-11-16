@@ -212,6 +212,16 @@ redis Redis(
         schema: None,
     },
 )
+span Spanner(
+    SpannerConfig {
+        project: "acme-prod",
+        instance: "main",
+        database: "orders",
+        private_key: "/Users/ada/.config/gcloud/spanner-sa.json",
+        emulator: "localhost:9020",
+        statement_timeout: 30,
+    },
+)
 clk ClickHouse(
     ServerConfig {
         host: "ch.internal",

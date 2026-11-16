@@ -514,6 +514,70 @@ source: src/sql_snapshots.rs
   |SELECT COUNT(*) FROM `public`.`accounts` WHERE `Name` = 'it''s'|
   = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
 
+[spanner] no bars · preview
+  |SELECT * FROM `public`.`accounts` LIMIT 1000|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] no bars · count
+  |SELECT COUNT(*) FROM `public`.`accounts`|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] one equals · preview
+  |SELECT * FROM `public`.`accounts` WHERE `Name` = 'it\\x27s' LIMIT 1000|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] one equals · count
+  |SELECT COUNT(*) FROM `public`.`accounts` WHERE `Name` = 'it\\x27s'|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] and · preview
+  |SELECT * FROM `public`.`accounts` WHERE (`Name` = 'it\\x27s') AND (`n` > '5') LIMIT 1000|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] and · count
+  |SELECT COUNT(*) FROM `public`.`accounts` WHERE (`Name` = 'it\\x27s') AND (`n` > '5')|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] or · preview
+  |SELECT * FROM `public`.`accounts` WHERE (`Name` = 'it\\x27s') OR (`n` > '5') LIMIT 1000|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] or · count
+  |SELECT COUNT(*) FROM `public`.`accounts` WHERE (`Name` = 'it\\x27s') OR (`n` > '5')|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] raw alone · preview
+  |SELECT * FROM `public`.`accounts` WHERE n > 1 LIMIT 1000|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] raw alone · count
+  |SELECT COUNT(*) FROM `public`.`accounts` WHERE n > 1|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] raw or equals · preview
+  |SELECT * FROM `public`.`accounts` WHERE (n > 1) OR (`Name` = 'ok') LIMIT 1000|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] raw or equals · count
+  |SELECT COUNT(*) FROM `public`.`accounts` WHERE (n > 1) OR (`Name` = 'ok')|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] and then or · preview
+  |SELECT * FROM `public`.`accounts` WHERE ((`Name` = 'it\\x27s') AND (`n` > '5')) OR (CAST(`Name` AS STRING) LIKE '%z%') LIMIT 1000|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] and then or · count
+  |SELECT COUNT(*) FROM `public`.`accounts` WHERE ((`Name` = 'it\\x27s') AND (`n` > '5')) OR (CAST(`Name` AS STRING) LIKE '%z%')|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] skipped bar · preview
+  |SELECT * FROM `public`.`accounts` WHERE `Name` = 'it\\x27s' LIMIT 1000|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
+[spanner] skipped bar · count
+  |SELECT COUNT(*) FROM `public`.`accounts` WHERE `Name` = 'it\\x27s'|
+  = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None
+
 [mssql] no bars · preview
   |SELECT * FROM "public"."accounts" LIMIT 1000|
   = write_on=false select=true classify=ReadOnly [] gate ro=None rw=None full=None

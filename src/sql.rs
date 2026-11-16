@@ -26,8 +26,8 @@ use sqlparser::ast::{
     UtilityOption, Visit, Visitor, visit_statements,
 };
 use sqlparser::dialect::{
-    ClickHouseDialect, Dialect, DuckDbDialect, GenericDialect, MsSqlDialect, MySqlDialect,
-    PostgreSqlDialect, SQLiteDialect, SnowflakeDialect,
+    BigQueryDialect, ClickHouseDialect, Dialect, DuckDbDialect, GenericDialect, MsSqlDialect,
+    MySqlDialect, PostgreSqlDialect, SQLiteDialect, SnowflakeDialect,
 };
 use sqlparser::keywords::Keyword;
 use sqlparser::parser::Parser as SqlParser;
@@ -71,6 +71,12 @@ impl Buffer {
                 .into_iter()
                 .flat_map(|batch| tsql_statements(sql, batch))
                 .collect(),
+            // A buffer the tokenizer cannot read whole is mid-typing; the
+            // grammar recovers from what it cannot read.
+            Syntax::Sql if engine.spec().sql.statement_split == StatementSplit::Tokens => {
+                located_tokens(parser(engine.spec().sql.parser_dialect).as_ref(), sql)
+                    .map_or_else(|| statements_in(sql), |tokens| between_semicolons(&tokens))
+            }
             Syntax::Sql => statements_in(sql),
             Syntax::Mongo => crate::mql::statements(sql),
             Syntax::Redis => crate::redis_cmd::statements(sql),
@@ -876,7 +882,7 @@ pub(crate) fn generated_write(spec: &SqlSpec, sql: &str) -> bool {
     // A comment anywhere refuses either: MySQL runs `/*! … */` as SQL, and
     // the grammar hides one inside a name or between tokens the shape checks
     // read only by kind, beside a set value or in a predicate never read.
-    ((kinds == ["insert"] && literal_insert(statements[0], sql)) || updates)
+    ((kinds == ["insert"] && literal_insert(spec, statements[0], sql)) || updates)
         && !commented(root, sql)
         && !deletes_anything(root)
 }
@@ -969,7 +975,7 @@ pub(crate) fn is_transaction_bracket(sql: &str) -> bool {
 /// compared as text as well as read from the tree: `ON CONFLICT (a) DO NOTHING`
 /// and `ON DUPLICATE KEY UPDATE a = VALUES(a)` are real clauses nothing
 /// generates.
-fn literal_insert(statement: Node, sql: &str) -> bool {
+fn literal_insert(spec: &SqlSpec, statement: Node, sql: &str) -> bool {
     // `RETURNING` hangs beside the insert, not under it.
     let Some(insert) = statement
         .named_child(0)
@@ -1004,7 +1010,7 @@ fn literal_insert(statement: Node, sql: &str) -> bool {
         !values.is_empty()
             && values
                 .iter()
-                .all(|value| literal_value(*value, sql) || null_literal(*value, sql))
+                .all(|value| value_literal(spec, *value, sql) || null_literal(*value, sql))
     });
     let Some(last) = rows.last() else {
         return false;
@@ -1534,7 +1540,7 @@ fn equality_columns(
             return equality_columns(spec, *left, sql, columns)
                 && equality_columns(spec, *right, sql, columns);
         }
-        "=" if literal_value(*right, sql) => match left.kind() {
+        "=" if value_literal(spec, *right, sql) => match left.kind() {
             "invocation" if spec.row_terms && quoted(*right, sql) => stringified(*left, sql),
             _ => column_name(*left, sql),
         },
@@ -1611,6 +1617,38 @@ fn literal_value(node: Node, sql: &str) -> bool {
     node.kind() == "literal" && (quoted || hex)
 }
 
+/// [`literal_value`], or on an engine with [`SqlSpec::bare_literals`] a
+/// bare number or `TRUE`/`FALSE`, which it spells some types' values as.
+fn value_literal(spec: &SqlSpec, node: Node, sql: &str) -> bool {
+    literal_value(node, sql) || (spec.bare_literals && bare_literal(node, sql))
+}
+
+/// `-?digits[.digits][e[+-]digits]`, `TRUE` or `FALSE`, and nothing else.
+fn bare_literal(node: Node, sql: &str) -> bool {
+    let Some(text) = sql
+        .get(node.byte_range())
+        .filter(|_| node.kind() == "literal")
+    else {
+        return false;
+    };
+    if text.eq_ignore_ascii_case("TRUE") || text.eq_ignore_ascii_case("FALSE") {
+        return true;
+    }
+    let digits = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    let unsigned = text.strip_prefix('-').unwrap_or(text);
+    let (mantissa, exponent) = match unsigned.split_once(['e', 'E']) {
+        Some((mantissa, exponent)) => (mantissa, Some(exponent)),
+        None => (unsigned, None),
+    };
+    let whole = match mantissa.split_once('.') {
+        Some((integer, fraction)) => digits(integer) && digits(fraction),
+        None => digits(mantissa),
+    };
+    whole
+        && exponent
+            .is_none_or(|exponent| digits(exponent.strip_prefix(['+', '-']).unwrap_or(exponent)))
+}
+
 /// Whether every value an `UPDATE` sets is one dbdelve writes: a literal
 /// [`literal_value`] reads, `NULL`, `DEFAULT`, or the engine's own literal of
 /// bytes. A function call, a concatenation, a subquery or another column is a
@@ -1629,7 +1667,7 @@ fn literal_sets(spec: &SqlSpec, statement: Node, sql: &str) -> bool {
             assignment
                 .child_by_field_name("right")
                 .is_some_and(|value| {
-                    literal_value(value, sql)
+                    value_literal(spec, value, sql)
                         || null_literal(value, sql)
                         || default_keyword(value, sql)
                         || bytes_literal(spec, value, sql)
@@ -3710,6 +3748,7 @@ fn parser(dialect: ParserDialect) -> Box<dyn Dialect> {
         ParserDialect::Snowflake => Box::new(SnowflakeDialect {}),
         ParserDialect::MsSql => Box::new(MsSqlDialect {}),
         ParserDialect::ClickHouse => Box::new(ClickHouseDialect {}),
+        ParserDialect::BigQuery => Box::new(BigQueryDialect {}),
     }
 }
 
@@ -4953,11 +4992,7 @@ pub(crate) fn format(engine: Engine, sql: &str) -> Result<String, &'static str> 
             None => gap,
         };
         formatted += gap;
-        formatted += &sqlformat::format(
-            &sql[statement.clone()],
-            &sqlformat::QueryParams::default(),
-            &options,
-        );
+        formatted += &laid_out(sql, statement.clone(), &tokens, &options);
         written = statement.end;
     }
     formatted += &sql[written..];
@@ -4971,6 +5006,41 @@ pub(crate) fn format(engine: Engine, sql: &str) -> Result<String, &'static str> 
         true => Ok(formatted),
         false => Err("Not formatting: the new layout would read as different SQL."),
     }
+}
+
+/// One statement as `sqlformat` lays it out, except a pipe query's operators,
+/// which each lead a line of their own with their `|>`: `sqlformat` leaves the
+/// `|>` at the end of the line before. Only GoogleSQL's tokenizer reads one.
+fn laid_out(
+    sql: &str,
+    statement: Range<usize>,
+    tokens: &[(Token, Range<usize>)],
+    options: &sqlformat::FormatOptions,
+) -> String {
+    let format = |text: &str| sqlformat::format(text, &sqlformat::QueryParams::default(), options);
+    let mut depth = 0usize;
+    let mut cuts = Vec::new();
+    for (token, range) in tokens
+        .iter()
+        .filter(|(_, range)| statement.start <= range.start && range.end <= statement.end)
+    {
+        match token {
+            Token::LParen => depth += 1,
+            Token::RParen => depth = depth.saturating_sub(1),
+            Token::VerticalBarRightAngleBracket if depth == 0 => cuts.push(range.clone()),
+            _ => {}
+        }
+    }
+    let Some(first) = cuts.first() else {
+        return format(&sql[statement]);
+    };
+    let mut laid = format(&sql[statement.start..first.start]);
+    for (at, cut) in cuts.iter().enumerate() {
+        let end = cuts.get(at + 1).map_or(statement.end, |next| next.start);
+        laid += "\n|> ";
+        laid += &format(&sql[cut.end..end]).replace('\n', "\n   ");
+    }
+    laid
 }
 
 fn sqlformat_dialect(dialect: FormatDialect) -> sqlformat::Dialect {
@@ -5767,10 +5837,14 @@ mod tests {
             "BEGIN SELECT 1; SELECT 2; END",
             "SELECT 1\nGO\nSELECT 2",
         ] {
-            for engine in Engine::ALL
-                .into_iter()
-                .filter(|e| !matches!(e, Engine::SqlServer | Engine::MongoDb | Engine::Redis))
-            {
+            // Spanner is cut by its tokenizer: GoogleSQL has no block to
+            // hold a `;`, and its quoting is not the grammar's.
+            for engine in Engine::ALL.into_iter().filter(|e| {
+                !matches!(
+                    e,
+                    Engine::SqlServer | Engine::MongoDb | Engine::Redis | Engine::Spanner
+                )
+            }) {
                 assert_eq!(
                     Buffer::for_engine(engine, sql).statements(),
                     Buffer::parse(sql).statements(),

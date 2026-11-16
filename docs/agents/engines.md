@@ -1020,3 +1020,78 @@ Decided, and not to be re-litigated:
   (`EngineSpec::dbms_names`), suggests that dialect, one click to take it; a
   dialect that also has a built-in driver says what the built-in does that
   the plugin cannot.
+- **Spanner is spoken to over its REST API with `ureq`, as Snowflake is**
+  (`spanner.rs`): Google's Rust clients are tokio futures. The transport is
+  `clickhouse::http`'s watched agent (`watched_agent`), on the platform's trust
+  store against the service and plain HTTP when the profile's Emulator field
+  is filled, because the field says emulator, never because a host looks
+  local. That agent turns the environment's proxy off, so Spanner reaches the
+  service directly or not at all. GoogleSQL databases only: the connect reads
+  `INFORMATION_SCHEMA.DATABASE_OPTIONS`, which both dialects answer, and
+  refuses a PostgreSQL-dialect one by name.
+- **Spanner signs in three ways, said by which field is filled**: the emulator
+  takes nothing, a service account key file signs its own RS256 token
+  (`aud` the service, `kid` the key's id, an hour's life, Snowflake's
+  `signed_jwt`), and with neither the application default credentials file
+  is read (`spanner/auth.rs`): a user's refresh token is exchanged at the
+  file's `token_uri` and billed to its `quota_project_id`. Tokens are kept
+  until five minutes before they expire and never logged. Metadata server,
+  `external_account` and impersonation are refused by name.
+- **Each Spanner statement goes to the API its first keyword names**, past
+  comments and a leading `@{…}` hint: `INSERT`, `UPDATE`, `DELETE` to a
+  read-write transaction committed at once (several as one `executeBatchDml`,
+  applied whole or rolled back), DDL to `UpdateDatabaseDdl` as an operation
+  polled until done, anything else to a single-use read-only transaction. This
+  is transport, not a gate. A submission is cut into statements by the
+  dialect's tokenizer and each sent without its `;`, which the DDL endpoint
+  refuses; a submission mixing the three is refused. `ABORTED` runs a write
+  again whole, up to five times. Reads share one multiplexed session; writes
+  hold a regular one for their whole length, since a session takes one
+  transaction at a time (and the emulator one in all). A session the server
+  forgot is made again once, the request never having run.
+- **Spanner's Read-only is the read-only transaction**
+  (`ReadOnlySession::PerRequest`): with the hold on, every statement is sent
+  as a read, which takes no DML, and DDL is refused before anything is sent.
+  So a statement `sqlparser` cannot read runs once in any mode.
+- **A Spanner read is stopped by closing its response**, at the row limit
+  where `Fetch::reads_only` says so, or by Cancel, which aborts the watched
+  read (`clickhouse::http::Watch`); a write is rolled back if Cancel lands
+  before its commit, and the commit itself is not watched; a schema change is
+  asked to `:cancel`, and what it applied stays (`db::cancel_cost`). The
+  statement timeout is the client's idle bound on the response
+  (`Bounds::user`), since a write cut off before its commit commits nothing.
+- **A Spanner stream is read object by object in either framing**: the
+  service's JSON array of `PartialResultSet`s and the emulator's one
+  `{"result": …}` a line. A chunked value is merged by the reference's rules.
+  Values arrive as JSON beside their types and are kept as sent (`BYTES` as
+  base64); an `ARRAY` or `STRUCT` is written out as JSON by its element types.
+  An error is read in both shapes, `{"error": {…}}` and the emulator's bare
+  `{code, message}`, its `[at line:column]` turned into a position; an empty
+  400, which is how the emulator reports most statement errors over REST, says
+  only that.
+- **Spanner's numbers and `BOOL` go out bare** (owner decision).
+  GoogleSQL converts a string literal to `DATE` and `TIMESTAMP` only, so
+  `spanner::typed_literal` writes an `INT64`, `NUMERIC`, `FLOAT` or `BOOL`
+  value bare, and `SqlSpec::bare_literals` has the write gate admit a bare
+  number or `TRUE`/`FALSE` wherever it admits a quoted literal, on Spanner
+  alone. `edit_target` refuses a row whose key is `BYTES` and says why, and
+  marks `JSON`, `ARRAY`, `BYTES` and generated columns unwritable. A quote is written `\x27`
+  and a backtick in a name `\x60`: GoogleSQL has no doubled quote, and its own
+  `\'` is where the gates' grammar ends a string. The table a result came from
+  is read off the statement (`sql::table_read`) and resolved case-blind.
+- **Spanner's default schema has no name**, so `EngineSpec::qualified` writes
+  a relation in it bare. Paging is by key, with no `ORDER BY` no order; Copy
+  TRUNCATE is `DELETE FROM t WHERE true`, since a `DELETE` needs a `WHERE`;
+  filters cast to `STRING` (`LIKE` and `REGEXP_CONTAINS` take only strings),
+  which the server refuses for `JSON` and `ARRAY`. Copy DDL picks the
+  relation's statements out of the database's own DDL. Routines, sequences,
+  change streams and interleaving are not listed, references are not read,
+  and Explain is not offered.
+- **A Spanner buffer is cut by `sqlparser`'s tokenizer**
+  (`StatementSplit::Tokens`), which reads GoogleSQL's `\'`, triple-quoted
+  strings and `#` comments where the grammar would end a string early or read
+  `#` as an operator; it falls back to the grammar when the tokenizer cannot
+  read a half-typed buffer. Format Query lays a pipe query out one operator a
+  line, `|>` leading each, under the same check that the result reads as the
+  same SQL, which refuses a hint, a raw or a triple-quoted string. Completion
+  offers the spec's `pipe_operators`, Spanner's own list, after a `|>`.

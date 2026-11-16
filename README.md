@@ -57,8 +57,9 @@ data lives are all in [docs/install.md](docs/install.md).
 
 ## Supported databases
 
-Postgres, MySQL, MariaDB, SQLite, Turso, DuckDB, Snowflake, SQL Server, MongoDB,
-Redis (and Valkey, KeyDB, Dragonfly) and ClickHouse.
+Postgres, MySQL, MariaDB, SQLite, Turso, DuckDB, Snowflake, Google Cloud Spanner
+([what to know](docs/spanner.md)), SQL Server, MongoDB, Redis (and Valkey,
+KeyDB, Dragonfly) and ClickHouse.
 
 Any other database with an ODBC driver is reachable through the bundled ODBC
 bridge, with that driver installed: IBM Db2, Oracle, SAP HANA, SAP ASE

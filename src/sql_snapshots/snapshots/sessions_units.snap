@@ -91,6 +91,17 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 10 at SELECT 2 => |ok|
+[spanner] statement 0..8 => |SELECT 1|
+[spanner] statement 10..18 => |SELECT 2|
+[spanner] queued 0..8 => |SELECT 1|
+[spanner] queued 10..18 => |SELECT 2|
+[spanner] queued in 0..9 0..8 => |SELECT 1|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |SELECT 1; SELECT 2|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 10 at SELECT 2 => |ok|
 [mssql] statement 0..8 => |SELECT 1|
 [mssql] statement 10..18 => |SELECT 2|
 [mssql] queued 0..18 => |SELECT 1; SELECT 2|
@@ -225,6 +236,17 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 13 at SELECT 2 => |ok|
+[spanner] statement 0..8 => |SELECT 1|
+[spanner] statement 10..26 => |GO\u{a}SELECT 2\u{a}GO 2|
+[spanner] queued 0..8 => |SELECT 1|
+[spanner] queued 10..26 => |GO\u{a}SELECT 2\u{a}GO 2|
+[spanner] queued in 0..9 0..8 => |SELECT 1|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |SELECT 1;\u{a}GO\u{a}SELECT 2\u{a}GO 2\u{a}|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 13 at SELECT 2 => |ok|
 [mssql] statement 0..8 => |SELECT 1|
 [mssql] statement 13..21 => |SELECT 2|
 [mssql] queued 0..9 => |SELECT 1;|
@@ -356,6 +378,15 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 18 at SELECT 2 => |ok|
+[spanner] statement 0..26 => |SELECT 'GO'\u{a}-- GO\u{a}SELECT 2|
+[spanner] queued 0..26 => |SELECT 'GO'\u{a}-- GO\u{a}SELECT 2|
+[spanner] queued in 0..9 0..26 => |SELECT 'GO'\u{a}-- GO\u{a}SELECT 2|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |SELECT 'GO'\u{a}-- GO\u{a}SELECT 2|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 18 at SELECT 2 => |ok|
 [mssql] statement 0..26 => |SELECT 'GO'\u{a}-- GO\u{a}SELECT 2|
 [mssql] queued 0..26 => |SELECT 'GO'\u{a}-- GO\u{a}SELECT 2|
 [mssql] queued in 0..9 0..26 => |SELECT 'GO'\u{a}-- GO\u{a}SELECT 2|
@@ -472,6 +503,15 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 11 at the end => |ok|
+[spanner] statement 0..11 => |SELECT 1\u{a}GO|
+[spanner] queued 0..11 => |SELECT 1\u{a}GO|
+[spanner] queued in 0..9 0..11 => |SELECT 1\u{a}GO|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |SELECT 1\u{a}GO|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 11 at the end => |ok|
 [mssql] statement 0..8 => |SELECT 1|
 [mssql] queued 0..8 => |SELECT 1|
 [mssql] queued in 0..9 0..8 => |SELECT 1|
@@ -621,6 +661,19 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 46 at the end => |ok|
+[spanner] statement 0..26 => |IF 1=1 BEGIN DELETE FROM t|
+[spanner] statement 28..41 => |DELETE FROM u|
+[spanner] statement 43..46 => |END|
+[spanner] queued 0..26 => |IF 1=1 BEGIN DELETE FROM t|
+[spanner] queued 28..41 => |DELETE FROM u|
+[spanner] queued 43..46 => |END|
+[spanner] queued in 0..9 0..26 => |IF 1=1 BEGIN DELETE FROM t|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |IF 1=1 BEGIN DELETE FROM t; DELETE FROM u; END|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 46 at the end => |ok|
 [mssql] statement 0..46 => |IF 1=1 BEGIN DELETE FROM t; DELETE FROM u; END|
 [mssql] queued 0..46 => |IF 1=1 BEGIN DELETE FROM t; DELETE FROM u; END|
 [mssql] queued in 0..9 0..46 => |IF 1=1 BEGIN DELETE FROM t; DELETE FROM u; END|
@@ -755,6 +808,17 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 51 at the end => |ok|
+[spanner] statement 0..18 => |DECLARE @x int = 1|
+[spanner] statement 20..46 => |SELECT @x\u{a}GO\u{a}SELECT * FROM|
+[spanner] queued 0..18 => |DECLARE @x int = 1|
+[spanner] queued 20..46 => |SELECT @x\u{a}GO\u{a}SELECT * FROM|
+[spanner] queued in 0..9 0..18 => |DECLARE @x int = 1|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |DECLARE @x int = 1;\u{a}SELECT @x\u{a}GO\u{a}SELECT * FROM #tmp|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 51 at the end => |ok|
 [mssql] statement 0..18 => |DECLARE @x int = 1|
 [mssql] statement 20..29 => |SELECT @x|
 [mssql] statement 33..51 => |SELECT * FROM #tmp|
@@ -886,6 +950,15 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 20 at the end => |ok|
+[spanner] statement => (none)
+[spanner] queued => (none)
+[spanner] queued in 0..9 => (none)
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |/* only a comment */|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 20 at the end => |ok|
 [mssql] statement => (none)
 [mssql] queued => (none)
 [mssql] queued in 0..9 => (none)
@@ -1012,6 +1085,15 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 19 at SELECT 2 => |ok|
+[spanner] statement 0..27 => |SELECT 'a\u{a}GO\u{a}b'\u{a}GO\u{a}SELECT 2|
+[spanner] queued 0..27 => |SELECT 'a\u{a}GO\u{a}b'\u{a}GO\u{a}SELECT 2|
+[spanner] queued in 0..9 0..27 => |SELECT 'a\u{a}GO\u{a}b'\u{a}GO\u{a}SELECT 2|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |SELECT 'a\u{a}GO\u{a}b'\u{a}GO\u{a}SELECT 2|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 19 at SELECT 2 => |ok|
 [mssql] statement 0..15 => |SELECT 'a\u{a}GO\u{a}b'|
 [mssql] statement 19..27 => |SELECT 2|
 [mssql] queued 0..15 => |SELECT 'a\u{a}GO\u{a}b'|
@@ -1164,6 +1246,15 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 21 at SELECT 2 => |ok|
+[spanner] statement 9..29 => |SELECT 1\u{a}GO\u{a}SELECT 2|
+[spanner] queued 9..29 => |SELECT 1\u{a}GO\u{a}SELECT 2|
+[spanner] queued in 0..9 => (none)
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |/*\u{a}GO\u{a}*/\u{a}SELECT 1\u{a}GO\u{a}SELECT 2|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 21 at SELECT 2 => |ok|
 [mssql] statement 9..17 => |SELECT 1|
 [mssql] statement 21..29 => |SELECT 2|
 [mssql] queued 0..17 => |/*\u{a}GO\u{a}*/\u{a}SELECT 1|
@@ -1309,6 +1400,17 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 36 at the end => |ok|
+[spanner] statement 0..8 => |SELECT 1|
+[spanner] statement 24..36 => |SELECT 'a;b'|
+[spanner] queued 0..8 => |SELECT 1|
+[spanner] queued 24..36 => |SELECT 'a;b'|
+[spanner] queued in 0..9 0..8 => |SELECT 1|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |SELECT 1 -- trailing\u{a};\u{a}\u{a}SELECT 'a;b'|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 36 at the end => |ok|
 [mssql] statement 0..8 => |SELECT 1|
 [mssql] statement 24..36 => |SELECT 'a;b'|
 [mssql] queued 0..36 => |SELECT 1 -- trailing\u{a};\u{a}\u{a}SELECT 'a;b'|
@@ -1431,6 +1533,15 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 27 at the end => |ok|
+[spanner] statement 0..27 => |db.a.find({})\u{a}db.b.find({})|
+[spanner] queued 0..27 => |db.a.find({})\u{a}db.b.find({})|
+[spanner] queued in 0..9 0..27 => |db.a.find({})\u{a}db.b.find({})|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |db.a.find({})\u{a}db.b.find({})|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 27 at the end => |ok|
 [mssql] statement 0..27 => |db.a.find({})\u{a}db.b.find({})|
 [mssql] queued 0..27 => |db.a.find({})\u{a}db.b.find({})|
 [mssql] queued in 0..9 0..27 => |db.a.find({})\u{a}db.b.find({})|
@@ -1545,6 +1656,15 @@ source: src/sql_snapshots.rs
 [clickhouse] batch_counts => |ok|
 [clickhouse] batch_repeats 0 => |ok|
 [clickhouse] batch_repeats 13 at the end => |ok|
+[spanner] statement 0..13 => |GET a\u{a}SET b 1|
+[spanner] queued 0..13 => |GET a\u{a}SET b 1|
+[spanner] queued in 0..9 0..13 => |GET a\u{a}SET b 1|
+[spanner] expected_sets => |1|
+[spanner] split_reads => (none)
+[spanner] one_batch => |GET a\u{a}SET b 1|
+[spanner] batch_counts => |ok|
+[spanner] batch_repeats 0 => |ok|
+[spanner] batch_repeats 13 at the end => |ok|
 [mssql] statement 0..5 => |GET a|
 [mssql] queued 0..13 => |GET a\u{a}SET b 1|
 [mssql] queued in 0..9 0..13 => |GET a\u{a}SET b 1|

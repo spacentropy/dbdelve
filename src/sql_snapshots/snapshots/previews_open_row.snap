@@ -866,6 +866,114 @@ source: src/sql_snapshots.rs
 [clickhouse] rows=0 key=a key "q" type=unknown
   (none)
 
+[spanner] rows=100 key=k type=string
+  (none)
+
+[spanner] rows=100 key=k type=hash
+  (none)
+
+[spanner] rows=100 key=k type=list
+  (none)
+
+[spanner] rows=100 key=k type=set
+  (none)
+
+[spanner] rows=100 key=k type=zset
+  (none)
+
+[spanner] rows=100 key=k type=stream
+  (none)
+
+[spanner] rows=100 key=k type=ReJSON-RL
+  (none)
+
+[spanner] rows=100 key=k type=TSDB-TYPE
+  (none)
+
+[spanner] rows=100 key=k type=unknown
+  (none)
+
+[spanner] rows=100 key=a key "q" type=string
+  (none)
+
+[spanner] rows=100 key=a key "q" type=hash
+  (none)
+
+[spanner] rows=100 key=a key "q" type=list
+  (none)
+
+[spanner] rows=100 key=a key "q" type=set
+  (none)
+
+[spanner] rows=100 key=a key "q" type=zset
+  (none)
+
+[spanner] rows=100 key=a key "q" type=stream
+  (none)
+
+[spanner] rows=100 key=a key "q" type=ReJSON-RL
+  (none)
+
+[spanner] rows=100 key=a key "q" type=TSDB-TYPE
+  (none)
+
+[spanner] rows=100 key=a key "q" type=unknown
+  (none)
+
+[spanner] rows=0 key=k type=string
+  (none)
+
+[spanner] rows=0 key=k type=hash
+  (none)
+
+[spanner] rows=0 key=k type=list
+  (none)
+
+[spanner] rows=0 key=k type=set
+  (none)
+
+[spanner] rows=0 key=k type=zset
+  (none)
+
+[spanner] rows=0 key=k type=stream
+  (none)
+
+[spanner] rows=0 key=k type=ReJSON-RL
+  (none)
+
+[spanner] rows=0 key=k type=TSDB-TYPE
+  (none)
+
+[spanner] rows=0 key=k type=unknown
+  (none)
+
+[spanner] rows=0 key=a key "q" type=string
+  (none)
+
+[spanner] rows=0 key=a key "q" type=hash
+  (none)
+
+[spanner] rows=0 key=a key "q" type=list
+  (none)
+
+[spanner] rows=0 key=a key "q" type=set
+  (none)
+
+[spanner] rows=0 key=a key "q" type=zset
+  (none)
+
+[spanner] rows=0 key=a key "q" type=stream
+  (none)
+
+[spanner] rows=0 key=a key "q" type=ReJSON-RL
+  (none)
+
+[spanner] rows=0 key=a key "q" type=TSDB-TYPE
+  (none)
+
+[spanner] rows=0 key=a key "q" type=unknown
+  (none)
+
 [mssql] rows=100 key=k type=string
   (none)
 

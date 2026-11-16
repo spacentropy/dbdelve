@@ -1,9 +1,9 @@
 # AGENTS.md
 
 DBDelve is a native database client in Rust on GPUI for macOS, Linux and Windows,
-speaking Postgres, MySQL, MariaDB, SQLite, DuckDB, Snowflake, SQL Server, MongoDB,
-Redis and ClickHouse, and, through a bundled ODBC bridge, anything an ODBC
-driver reaches.
+speaking Postgres, MySQL, MariaDB, SQLite, DuckDB, Snowflake, Spanner, SQL
+Server, MongoDB, Redis and ClickHouse, and, through a bundled ODBC bridge,
+anything an ODBC driver reaches.
 
 The split everything below leans on is _whose SQL it is_. An editor buffer is
 the user's and is never touched uninvited; a browsing surface (an object tab's
@@ -234,6 +234,9 @@ redis://dbdelve:dbdelve@127.0.0.1:56379/0
 mongodb://dbdelve:dbdelve@127.0.0.1:57017/dbdelve_dev
 clickhouse://dbdelve:dbdelve@127.0.0.1:58123/dbdelve_dev?sslmode=disable
 ```
+
+Spanner has no URL: its emulator's REST address is `127.0.0.1:59020`, with
+project `dbdelve-dev`, instance `dev` and database `dbdelve_dev`.
 
 What a change should pass locally:
 

@@ -210,7 +210,7 @@ fn key_pair(config: &SnowflakeConfig) -> Result<RsaKeyPair, DbError> {
 /// A PEM reader would refuse two of those three, and all three are the same
 /// bytes. So the armour lines are dropped, what is left is decoded, and a
 /// result that turns out to be PEM itself goes round once more.
-fn key_der(text: &str) -> Option<Vec<u8>> {
+pub(super) fn key_der(text: &str) -> Option<Vec<u8>> {
     let body: String = text
         .split("-----")
         .filter(|part| !part.contains("PRIVATE KEY"))
@@ -292,10 +292,19 @@ fn token(config: &SnowflakeConfig, now: u64) -> Result<String, DbError> {
         "iat": now,
         "exp": now + TOKEN_LIFETIME,
     });
+    signed_jwt(&json!({"alg": "RS256", "typ": "JWT"}), &claims, &key)
+}
 
+/// An RS256 JWT of `header` and `claims`, signed with `key`. Spanner's
+/// service account token too.
+pub(super) fn signed_jwt(
+    header: &Value,
+    claims: &Value,
+    key: &RsaKeyPair,
+) -> Result<String, DbError> {
     let message = format!(
         "{}.{}",
-        URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","typ":"JWT"}"#),
+        URL_SAFE_NO_PAD.encode(header.to_string()),
         URL_SAFE_NO_PAD.encode(claims.to_string())
     );
     let mut signature = vec![0; key.public().modulus_len()];

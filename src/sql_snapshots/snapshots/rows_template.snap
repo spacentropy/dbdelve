@@ -89,6 +89,17 @@ source: src/sql_snapshots.rs
 [clickhouse] only a sql server computed column => |INSERT INTO `public`.`accounts` (`total`) VALUES (?);|
 [clickhouse] empty => (none)
 [clickhouse] awkward names => |INSERT INTO `public`.`accounts` (`we"ird`, `back``tick`, `with space`, `ümlaut`, `[x]`, ``) VALUES (?, ?, ?, ?, ?, ?);|
+[spanner] ordinary => |INSERT INTO `public`.`accounts` (`id`, `Name`, `total`, `seq`, `rid`, `it's`) VALUES (?, ?, ?, ?, ?, ?);|
+[spanner] postgres generated => |INSERT INTO `public`.`accounts` (`a`, `b`, `c`) VALUES (?, ?, ?);|
+[spanner] mysql generated => |INSERT INTO `public`.`accounts` (`a`, `b`, `c`, `d`) VALUES (?, ?, ?, ?);|
+[spanner] sql server computed => |INSERT INTO `public`.`accounts` (`a`, `ident`, `dflt`) VALUES (?, ?, ?);|
+[spanner] look-alikes => |INSERT INTO `public`.`accounts` (`a`, `b`, `c`, `d`) VALUES (?, ?, ?, ?);|
+[spanner] all generated, sql server => |INSERT INTO `public`.`accounts` (`ident`, `g`, `s`) VALUES (?, ?, ?);|
+[spanner] all dropped, postgres => |INSERT INTO `public`.`accounts` (`b`, `c`) VALUES (?, ?);|
+[spanner] all dropped, mysql => |INSERT INTO `public`.`accounts` (`b`, `c`) VALUES (?, ?);|
+[spanner] only a sql server computed column => (none)
+[spanner] empty => (none)
+[spanner] awkward names => |INSERT INTO `public`.`accounts` (`we"ird`, `back\\x60tick`, `with space`, `ümlaut`, `[x]`, ``) VALUES (?, ?, ?, ?, ?, ?);|
 [mssql] ordinary => |INSERT INTO "public"."accounts" ("id", "Name", "total", "seq", "it's") VALUES (@p1, @p2, @p3, @p4, @p5);|
 [mssql] postgres generated => |INSERT INTO "public"."accounts" ("a", "b", "c") VALUES (@p1, @p2, @p3);|
 [mssql] mysql generated => |INSERT INTO "public"."accounts" ("a", "b", "c", "d") VALUES (@p1, @p2, @p3, @p4);|

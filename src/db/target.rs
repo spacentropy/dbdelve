@@ -7,7 +7,7 @@ use super::plugin::Plugin;
 use super::spec::Abilities;
 use super::{
     DbError, Engine, Fields, RelationKind, ServerConfig, Syntax, clickhouse, duckdb, external,
-    mssql, postgres, redis, turso,
+    mssql, postgres, redis, spanner, turso,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -345,6 +345,7 @@ pub fn is_cancel(target: Target, error: &DbError) -> bool {
         Engine::MongoDb => message == "Cancelled.",
         Engine::Redis => message == redis::CANCELLED,
         Engine::ClickHouse => message == clickhouse::CANCELLED,
+        Engine::Spanner => message == spanner::CANCELLED,
         // Nothing built in reaches it.
         Engine::Generic => false,
     }
@@ -381,6 +382,10 @@ pub fn cancel_cost(
             Some("The mutation keeps running in the background; KILL MUTATION stops it.".into())
         }
         Engine::SqlServer => Some(error.message.clone()),
+        // A write is rolled back before its commit, and a read undoes nothing.
+        Engine::Spanner if spanner::changes_schema(statement) => Some(
+            "A cancelled schema change keeps the statements Spanner had already applied.".into(),
+        ),
         Engine::Postgres => Some(
             "A cancel aborts the transaction it lands in: if one was open, it refuses every \
              statement until a ROLLBACK."
@@ -418,6 +423,7 @@ pub fn cancel_cost(
         | Engine::MySql
         | Engine::MariaDb
         | Engine::Snowflake
+        | Engine::Spanner
         | Engine::MongoDb
         | Engine::Generic => None,
     }
@@ -606,9 +612,11 @@ mod tests {
     fn each_target_has_the_levels_its_abilities_give() {
         for engine in Engine::ALL {
             let levels = match engine {
-                Engine::Postgres | Engine::SqlServer | Engine::Snowflake | Engine::DuckDb => {
-                    Levels::DatabaseThenSchema
-                }
+                Engine::Postgres
+                | Engine::SqlServer
+                | Engine::Snowflake
+                | Engine::DuckDb
+                | Engine::Spanner => Levels::DatabaseThenSchema,
                 Engine::MySql | Engine::MariaDb | Engine::ClickHouse => Levels::DatabaseIsSchema,
                 Engine::MongoDb | Engine::Redis => Levels::DatabaseHoldsObjects,
                 Engine::Sqlite | Engine::Turso | Engine::Generic => Levels::Flat,

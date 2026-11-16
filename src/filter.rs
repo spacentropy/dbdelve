@@ -627,6 +627,10 @@ pub(crate) fn sql_predicate(
                 Some(format!("REGEXP_COUNT({name}, {}) > 0", literal(value)))
             }
             RegexMatch::Match => Some(format!("match(toString({name}), {})", literal(value))),
+            RegexMatch::RegexpContains => Some(format!(
+                "REGEXP_CONTAINS(CAST({name} AS STRING), {})",
+                literal(value)
+            )),
             RegexMatch::None => None,
         },
     }
@@ -707,6 +711,7 @@ pub(crate) fn substring(
     };
     let name = match spec.sql.substring {
         SubstringMatch::LikeToString => format!("toString({name})"),
+        SubstringMatch::LikeCastString => format!("CAST({name} AS STRING)"),
         _ => name.to_string(),
     };
     let pattern = match operator {
