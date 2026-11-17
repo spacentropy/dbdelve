@@ -235,9 +235,6 @@ mongodb://dbdelve:dbdelve@127.0.0.1:57017/dbdelve_dev
 clickhouse://dbdelve:dbdelve@127.0.0.1:58123/dbdelve_dev?sslmode=disable
 ```
 
-Spanner has no URL: its emulator's REST address is `127.0.0.1:59020`, with
-project `dbdelve-dev`, instance `dev` and database `dbdelve_dev`.
-
 What a change should pass locally:
 
 ```sh
