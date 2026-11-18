@@ -73,6 +73,23 @@ impl SpannerConfig {
             emulator => format!("{path} on {emulator}"),
         }
     }
+
+    /// `projects/{p}/instances/{i}`, what the databases are listed under.
+    fn instance_path(&self) -> String {
+        format!(
+            "projects/{}/instances/{}",
+            self.project.trim(),
+            self.instance.trim()
+        )
+    }
+
+    fn database_path(&self) -> String {
+        format!(
+            "{}/databases/{}",
+            self.instance_path(),
+            self.database.trim()
+        )
+    }
 }
 
 /// A literal for a value bound for a column of `data_type`, where GoogleSQL
@@ -216,20 +233,12 @@ impl From<DbError> for Refused {
     }
 }
 
-/// gRPC's codes by number, as the emulator's bare errors carry them.
+/// gRPC's codes by number, as the emulator's bare errors carry them: only
+/// the two [`Refused`] asks about.
 fn status_name(code: i64) -> &'static str {
     match code {
-        1 => "CANCELLED",
-        3 => "INVALID_ARGUMENT",
-        4 => "DEADLINE_EXCEEDED",
         5 => "NOT_FOUND",
-        6 => "ALREADY_EXISTS",
-        7 => "PERMISSION_DENIED",
-        9 => "FAILED_PRECONDITION",
         10 => "ABORTED",
-        13 => "INTERNAL",
-        14 => "UNAVAILABLE",
-        16 => "UNAUTHENTICATED",
         _ => "",
     }
 }
@@ -295,17 +304,15 @@ impl<R: Read> Messages<R> {
     fn next(&mut self) -> Result<Option<Value>, DbError> {
         loop {
             if let Some((start, end)) = whole_object(&self.buffer)? {
-                let object: Value =
+                let mut object: Value =
                     serde_json::from_slice(&self.buffer[start..end]).map_err(|error| {
                         plain_error(format!(
                             "A result from Spanner was not understood: {error}."
                         ))
                     })?;
                 self.buffer.drain(..end);
-                return Ok(Some(match object.get("result") {
-                    Some(result) => result.clone(),
-                    None => object,
-                }));
+                let result = object.get_mut("result").map(Value::take);
+                return Ok(Some(result.unwrap_or(object)));
             }
             if self.ended {
                 return match self.buffer.iter().all(|byte| b" \t\r\n[],".contains(byte)) {
@@ -433,13 +440,12 @@ fn fields(kind: &Value) -> &[Value] {
 /// text (`INT64`, `NUMERIC`, dates and timestamps arrive as strings, `BYTES`
 /// as base64 and shown as that), and an `ARRAY` or `STRUCT` written out as
 /// JSON, element by element by its type. `None` is NULL.
-fn render(value: &Value, kind: &Value) -> Option<String> {
+fn render(value: Value, kind: &Value) -> Option<String> {
     match value {
         Value::Null => None,
-        Value::String(text) => Some(text.clone()),
-        Value::Bool(flag) => Some(flag.to_string()),
-        Value::Number(number) => Some(number.to_string()),
-        Value::Array(_) | Value::Object(_) => Some(nested(value, kind)),
+        Value::String(text) => Some(text),
+        Value::Array(_) | Value::Object(_) => Some(nested(&value, kind)),
+        other => Some(other.to_string()),
     }
 }
 
@@ -603,13 +609,7 @@ impl Connection {
             false => TlsConfig::default(),
         };
         let connection = Self {
-            database: format!(
-                "projects/{}/instances/{}/databases/{}",
-                config.project.trim(),
-                config.instance.trim(),
-                config.database.trim()
-            )
-            .into(),
+            database: config.database_path().into(),
             config: Arc::new(config.clone()),
             base: base.into(),
             agent: http::watched_agent(tls, None, Bounds::internal()),
@@ -643,13 +643,7 @@ impl Connection {
             ..(*self.config).clone()
         };
         Self {
-            database: format!(
-                "projects/{}/instances/{}/databases/{}",
-                config.project.trim(),
-                config.instance.trim(),
-                config.database.trim()
-            )
-            .into(),
+            database: config.database_path().into(),
             config: Arc::new(config),
             read_only: Arc::new(AtomicBool::new(self.read_only.load(Ordering::SeqCst))),
             reads: Arc::default(),
@@ -710,7 +704,8 @@ impl Connection {
         // Held on the server: every statement goes in a read-only
         // transaction, which takes no DML, and the DDL endpoint, which no
         // transaction holds, is not reached at all.
-        if self.read_only.load(Ordering::SeqCst) {
+        let read_only = self.read_only.load(Ordering::SeqCst);
+        if read_only {
             if routes.contains(&Route::Ddl) {
                 return Err(plain_error(
                     "Read-only keeps this connection to reads, and a schema change is not one: \
@@ -727,12 +722,8 @@ impl Connection {
         }
         let mut result = match routes.first() {
             None => return Ok(QueryResult::default()),
-            Some(Route::Write) if !self.read_only.load(Ordering::SeqCst) => {
-                self.write(&statements, run, fetch)?
-            }
-            Some(Route::Ddl) if !self.read_only.load(Ordering::SeqCst) => {
-                self.schema_change(&statements, run)?
-            }
+            Some(Route::Write) if !read_only => self.write(&statements, run, fetch)?,
+            Some(Route::Ddl) if !read_only => self.schema_change(&statements, run)?,
             Some(_) => {
                 let (last, earlier) = statements.split_last().expect("one at least");
                 for statement in earlier {
@@ -769,11 +760,11 @@ impl Connection {
                 fetch.reads_only,
             )
         };
-        let session = self.session(&self.reads, true, run)?;
+        let session = self.session(&mut lock(&self.reads), true, run)?;
         let streamed = match attempt(&session) {
             Err(refused) if refused.session_gone() => {
                 self.forget(&self.reads, &session);
-                attempt(&self.session(&self.reads, true, run)?)
+                attempt(&self.session(&mut lock(&self.reads), true, run)?)
             }
             streamed => streamed,
         };
@@ -792,14 +783,7 @@ impl Connection {
         let mut pause = Duration::from_millis(50);
         let mut tries = 0;
         loop {
-            let session = match slot.clone() {
-                Some(session) => session,
-                None => {
-                    let session = self.create_session(false, run)?;
-                    *slot = Some(session.clone());
-                    session
-                }
-            };
+            let session = self.session(&mut slot, false, run)?;
             match self.write_once(&session, statements, run, fetch) {
                 Err(refused) if refused.session_gone() && tries == 0 => *slot = None,
                 Err(refused) if refused.aborted() && tries + 1 < ABORTED_TRIES => {
@@ -823,13 +807,12 @@ impl Connection {
         fetch: Fetch,
     ) -> Result<QueryResult, Refused> {
         let begin = json!({"begin": {"readWrite": {}}});
-        let (mut result, transaction) = match statements {
-            [statement] => {
-                // Drained and counted past the limit: the rows are a write's.
-                let streamed = self.stream(session, statement, begin, Some(1), run, fetch, false);
-                let streamed = streamed?;
-                (streamed.result, streamed.transaction)
-            }
+        let Streamed {
+            mut result,
+            transaction,
+        } = match statements {
+            // Drained and counted past the limit: the rows are a write's.
+            [statement] => self.stream(session, statement, begin, Some(1), run, fetch, false)?,
             _ => self.batch(session, statements, begin, run)?,
         };
         let transaction = transaction.ok_or_else(|| {
@@ -846,14 +829,10 @@ impl Connection {
         }
         // Unwatched: a commit cut off part way leaves nobody knowing whether
         // it landed.
-        let commit = Run::new(Bounds::internal());
-        let _watching = commit.watch.enter();
-        self.json(
+        self.call(
             "POST",
             &format!("{session}:commit"),
             Some(&json!({"transactionId": transaction})),
-            commit.bounds,
-            None,
         )?;
         result.elapsed = Duration::ZERO;
         Ok(result)
@@ -867,7 +846,7 @@ impl Connection {
         statements: &[&str],
         begin: Value,
         run: &Run,
-    ) -> Result<(QueryResult, Option<String>), Refused> {
+    ) -> Result<Streamed, Refused> {
         let body = json!({
             "transaction": begin,
             "seqno": "1",
@@ -914,26 +893,29 @@ impl Connection {
             .iter()
             .filter_map(|set| set["stats"]["rowCountExact"].as_str()?.parse::<u64>().ok())
             .sum();
-        Ok((
-            QueryResult {
+        Ok(Streamed {
+            result: QueryResult {
                 rows_affected: Some(rows),
                 ..QueryResult::default()
             },
             transaction,
-        ))
+        })
     }
 
     /// Best effort: a transaction left open expires on the server anyway.
     fn rollback(&self, session: &str, transaction: &str) {
-        let run = Run::new(Bounds::internal());
-        let _watching = run.watch.enter();
-        let _ = self.json(
+        let _ = self.call(
             "POST",
             &format!("{session}:rollback"),
             Some(&json!({"transactionId": transaction})),
-            run.bounds,
-            None,
         );
+    }
+
+    /// A call of dbdelve's own, under its own internal bound.
+    fn call(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value, Refused> {
+        let run = Run::new(Bounds::internal());
+        let _watching = run.watch.enter();
+        self.json(method, path, body, run.bounds, None)
     }
 
     /// DDL as one long-running operation, waited on until it is done. A
@@ -955,15 +937,7 @@ impl Connection {
         let name = operation["name"].as_str().unwrap_or_default().to_string();
         while operation["done"].as_bool() != Some(true) {
             if run.aborted() {
-                let cancel = Run::new(Bounds::internal());
-                let _watching = cancel.watch.enter();
-                let outcome = match self.json(
-                    "POST",
-                    &format!("{name}:cancel"),
-                    Some(&json!({})),
-                    cancel.bounds,
-                    None,
-                ) {
+                let outcome = match self.call("POST", &format!("{name}:cancel"), Some(&json!({}))) {
                     Ok(_) => "Asked Spanner to stop the schema change.".to_string(),
                     Err(refused) => format!(
                         "Asking Spanner to stop the schema change failed ({}); it may still be \
@@ -974,10 +948,8 @@ impl Connection {
                 return Err(plain_error(format!("{CANCELLED} {outcome}")));
             }
             std::thread::sleep(POLL);
-            let poll = Run::new(Bounds::internal());
-            let _watching = poll.watch.enter();
             operation = self
-                .json("GET", &name, None, poll.bounds, None)
+                .call("GET", &name, None)
                 .map_err(|refused| refused.error)?;
         }
         if let Some(refused) = error_of(&operation["error"], None) {
@@ -989,11 +961,10 @@ impl Connection {
     /// The session in `slot`, made if there is none.
     fn session(
         &self,
-        slot: &Mutex<Option<String>>,
+        slot: &mut Option<String>,
         multiplexed: bool,
         run: &Run,
     ) -> Result<String, DbError> {
-        let mut slot = lock(slot);
         if let Some(session) = slot.as_ref() {
             return Ok(session.clone());
         }
@@ -1069,7 +1040,7 @@ impl Connection {
         let (mut returned, mut kept, mut filled, mut stopped) = (0, 0, None, false);
         let full = |kept: usize| fetch.limit.is_some_and(|limit| kept >= limit);
         loop {
-            let message = match messages.next() {
+            let mut message = match messages.next() {
                 Ok(Some(message)) => message,
                 Ok(None) => break,
                 Err(error) => return Err(self.cancelled(run, error.into())),
@@ -1103,8 +1074,8 @@ impl Connection {
             if let Some(count) = message["stats"]["rowCountExact"].as_str() {
                 result.rows_affected = count.parse().ok();
             }
-            let mut values = match message.get("values") {
-                Some(Value::Array(values)) => values.clone().into_iter(),
+            let mut values = match message["values"].take() {
+                Value::Array(values) => values.into_iter(),
                 _ => Vec::new().into_iter(),
             };
             if chunked && let (Some(last), Some(next)) = (pending.pop(), values.next()) {
@@ -1115,10 +1086,8 @@ impl Connection {
             let width = kinds.len().max(1);
             // A chunked last value is not whole until a later message.
             let whole = pending.len() - usize::from(chunked);
-            let mut rows = whole / width;
-            let complete: Vec<Value> = pending.drain(..rows * width).collect();
-            for cells in complete.chunks(width) {
-                rows -= 1;
+            let mut complete: Vec<Value> = pending.drain(..whole / width * width).collect();
+            for cells in complete.chunks_mut(width) {
                 returned += 1;
                 if full(kept) {
                     if stoppable {
@@ -1129,9 +1098,9 @@ impl Connection {
                 }
                 let row = Row::new(
                     cells
-                        .iter()
+                        .iter_mut()
                         .zip(&kinds)
-                        .map(|(value, kind)| render(value, kind)),
+                        .map(|(value, kind)| render(value.take(), kind)),
                 )
                 .map_err(Refused::from)?;
                 kept += 1;
@@ -1147,7 +1116,6 @@ impl Connection {
                     None => result.rows.push(row),
                 }
             }
-            let _ = rows;
             if stopped {
                 break;
             }
@@ -1232,9 +1200,11 @@ impl Connection {
             ("PATCH", Some(body)) => sent!(self.agent.patch(&url)).send_json(body),
             _ => sent!(self.agent.get(&url)).call(),
         };
-        let endpoint = self.config.endpoint();
         let mut response = sent.map_err(|error| {
-            plain_error(format!("Spanner at {endpoint} was not reached: {error}."))
+            plain_error(format!(
+                "Spanner at {} was not reached: {error}.",
+                self.config.endpoint()
+            ))
         })?;
         let status = response.status().as_u16();
         if status == 200 {
@@ -1262,28 +1232,16 @@ impl Connection {
     }
 
     pub fn databases(&self) -> Result<Databases, DbError> {
-        let instance = self
-            .database
-            .rsplit_once("/databases/")
-            .map_or(&*self.database, |(instance, _)| instance)
-            .to_string();
+        let instance = self.config.instance_path();
         let mut names = Vec::new();
         let mut page = String::new();
         loop {
-            let run = Run::new(Bounds::internal());
-            let _watching = run.watch.enter();
             let query = match page.is_empty() {
                 true => String::new(),
                 false => format!("?pageToken={page}"),
             };
             let listed = self
-                .json(
-                    "GET",
-                    &format!("{instance}/databases{query}"),
-                    None,
-                    run.bounds,
-                    None,
-                )
+                .call("GET", &format!("{instance}/databases{query}"), None)
                 .map_err(|refused| refused.error)?;
             for database in listed["databases"].as_array().into_iter().flatten() {
                 // Only the dialect DBDelve reads; a PostgreSQL one would be
@@ -1358,14 +1316,13 @@ impl Connection {
         for (index, kind, columns) in indexes {
             let definition = match kind {
                 IndexKind::Primary => format!("PRIMARY KEY ({})", quoted(&columns)),
-                IndexKind::Unique => format!(
-                    "CREATE UNIQUE INDEX {} ON {} ({})",
-                    name(&index),
-                    Engine::Spanner.qualified(schema, relation),
-                    quoted(&columns)
-                ),
                 _ => format!(
-                    "CREATE INDEX {} ON {} ({})",
+                    "CREATE {}INDEX {} ON {} ({})",
+                    if kind == IndexKind::Unique {
+                        "UNIQUE "
+                    } else {
+                        ""
+                    },
                     name(&index),
                     Engine::Spanner.qualified(schema, relation),
                     quoted(&columns)
@@ -1563,16 +1520,8 @@ impl Connection {
     /// The relation's statements out of the database's own DDL, as the
     /// server keeps them: its `CREATE`, its indexes and any `ALTER`.
     pub fn ddl(&self, schema: &str, relation: &str) -> Result<String, DbError> {
-        let run = Run::new(Bounds::internal());
-        let _watching = run.watch.enter();
         let answer = self
-            .json(
-                "GET",
-                &format!("{}/ddl", self.database),
-                None,
-                run.bounds,
-                None,
-            )
+            .call("GET", &format!("{}/ddl", self.database), None)
             .map_err(|refused| refused.error)?;
         let name = match schema {
             "" => relation.to_string(),
@@ -1646,8 +1595,6 @@ fn concerns(statement: &str) -> Option<String> {
     None
 }
 
-/// Whether GoogleSQL reads a quoted literal as a value of `kind`: it converts
-/// a string literal to `DATE` and `TIMESTAMP` and nothing else.
 /// Whether an edit can write a value of `kind`: quoted, or bare where
 /// `typed_literal` spells one and the gate admits it (`bare_literals`).
 fn writable(kind: &str) -> bool {
@@ -2714,14 +2661,14 @@ mod offline {
         ]}}});
         assert_eq!(type_name(&kind), "ARRAY<STRUCT<n INT64, s STRING, BOOL>>");
         assert_eq!(
-            render(&json!([["1", "x\"y", true], null]), &kind).as_deref(),
+            render(json!([["1", "x\"y", true], null]), &kind).as_deref(),
             Some(r#"[{"n": 1, "s": "x\"y", "_3": true}, null]"#)
         );
         assert_eq!(
-            render(&json!("NaN"), &json!({"code": "FLOAT64"})).as_deref(),
+            render(json!("NaN"), &json!({"code": "FLOAT64"})).as_deref(),
             Some("NaN")
         );
-        assert_eq!(render(&Value::Null, &json!({"code": "STRING"})), None);
+        assert_eq!(render(Value::Null, &json!({"code": "STRING"})), None);
     }
 
     #[test]

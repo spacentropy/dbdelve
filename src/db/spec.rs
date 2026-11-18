@@ -64,13 +64,18 @@ impl EngineSpec {
             true => identifier.replace('\\', r"\\"),
             false => identifier.to_string(),
         };
-        // GoogleSQL reads a doubled backtick as two names; its own `\``
-        // is where the gate's grammar ends the name, as `\'` ends a string.
-        let escaped = match self.sql.literal_quote {
+        let escaped = self.escaped_quote(quote);
+        format!("{quote}{}{quote}", identifier.replace(quote, &escaped))
+    }
+
+    /// `quote` inside a quoted name. GoogleSQL reads a doubled backtick as
+    /// two names; its own `\`` is where the gate's grammar ends the name, as
+    /// `\'` ends a string.
+    fn escaped_quote(&self, quote: char) -> String {
+        match self.sql.literal_quote {
             LiteralQuote::HexEscape => format!(r"\x{:02x}", quote as u32),
             LiteralQuote::Doubled => format!("{quote}{quote}"),
-        };
-        format!("{quote}{}{quote}", identifier.replace(quote, &escaped))
+        }
     }
 
     /// The inverse of [`Self::quote_identifier`]; anything that is not a
@@ -82,11 +87,7 @@ impl EngineSpec {
             .and_then(|rest| rest.strip_suffix(quote))
         {
             Some(inner) => {
-                let escaped = match self.sql.literal_quote {
-                    LiteralQuote::HexEscape => format!(r"\x{:02x}", quote as u32),
-                    LiteralQuote::Doubled => format!("{quote}{quote}"),
-                };
-                let inner = inner.replace(&escaped, &quote.to_string());
+                let inner = inner.replace(&self.escaped_quote(quote), &quote.to_string());
                 match self.sql.identifier_backslash_escapes {
                     true => inner.replace(r"\\", "\\"),
                     false => inner,

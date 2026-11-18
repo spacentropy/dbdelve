@@ -1488,13 +1488,11 @@ impl ConnectionConfig {
                 statement_timeout: 0,
             }),
             Engine::DuckDb => duckdb::path_from_url(url).map(|path| Self::duckdb(path, 0)),
-            // Nobody pastes a Snowflake URL, because there is no such form.
-            Engine::Snowflake => {
-                Err("Snowflake has no connection URL. Fill the fields in instead.".to_string())
-            }
-            Engine::Spanner => {
-                Err("Spanner has no connection URL. Fill the fields in instead.".to_string())
-            }
+            // Nobody pastes one of these, because there is no such form.
+            engine @ (Engine::Snowflake | Engine::Spanner) => Err(format!(
+                "{} has no connection URL. Fill the fields in instead.",
+                engine.label()
+            )),
             Engine::Generic => Err(GENERIC_REFUSAL.to_string()),
         }
     }
